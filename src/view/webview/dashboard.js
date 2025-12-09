@@ -310,7 +310,6 @@
             
             <div class="profile-grid">
                 ${createDetailItem(i18n['profile.email'] || 'Email', userInfo.email)}
-                ${createDetailItem(i18n['profile.plan'] || 'Plan', userInfo.planName)}
                 ${createDetailItem(i18n['profile.description'] || 'Description', userInfo.tierDescription)}
                 ${createDetailItem(i18n['feature.webSearch'] || 'Web Search', getFeatureStatus(userInfo.cascadeWebSearchEnabled))}
                 ${createDetailItem(i18n['feature.browser'] || 'Browser Access', getFeatureStatus(userInfo.browserEnabled))}
