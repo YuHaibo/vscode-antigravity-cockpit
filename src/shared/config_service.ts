@@ -110,6 +110,13 @@ class ConfigService {
     }
 
     /**
+     * 重置模型排序（清除自定义排序）
+     */
+    async resetModelOrder(): Promise<void> {
+        await this.updateConfig('modelOrder', []);
+    }
+
+    /**
      * 注册配置变化监听器
      */
     onConfigChange(listener: (config: CockpitConfig) => void): vscode.Disposable {

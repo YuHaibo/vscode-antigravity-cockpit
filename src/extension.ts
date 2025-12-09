@@ -134,6 +134,11 @@ function setupMessageHandling(): void {
                 }
                 break;
 
+            case 'resetOrder':
+                await configService.resetModelOrder();
+                reactor.syncTelemetry();
+                break;
+
             case 'refresh':
                 reactor.syncTelemetry();
                 break;

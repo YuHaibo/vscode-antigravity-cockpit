@@ -46,6 +46,7 @@ const translations: Record<SupportedLocale, TranslationMap> = {
         'dashboard.online': 'Restored',
         'dashboard.dragHint': 'Drag to reorder',
         'dashboard.pinHint': 'Pin to Status Bar',
+        'dashboard.resetOrder': 'Reset Order',
 
         // 通知
         'notify.refreshing': 'Refreshing quota data...',
@@ -91,6 +92,7 @@ const translations: Record<SupportedLocale, TranslationMap> = {
         'dashboard.online': '已恢复',
         'dashboard.dragHint': '拖拽排序',
         'dashboard.pinHint': '固定到状态栏',
+        'dashboard.resetOrder': '重置排序',
 
         // 通知
         'notify.refreshing': '正在刷新配额数据...',

@@ -14,6 +14,7 @@
     const statusDiv = document.getElementById('status');
     const creditsToggle = document.getElementById('credits-toggle');
     const refreshBtn = document.getElementById('refresh-btn');
+    const resetOrderBtn = document.getElementById('reset-order-btn');
     const toast = document.getElementById('toast');
 
     // 国际化文本
@@ -39,6 +40,9 @@
         // 绑定事件
         refreshBtn.addEventListener('click', handleRefresh);
         creditsToggle.addEventListener('change', handleToggleCredits);
+        if (resetOrderBtn) {
+            resetOrderBtn.addEventListener('click', handleResetOrder);
+        }
 
         // 监听消息
         window.addEventListener('message', handleMessage);
@@ -65,6 +69,11 @@
 
     function handleToggleCredits() {
         vscode.postMessage({ command: 'toggleCredits' });
+    }
+
+    function handleResetOrder() {
+        vscode.postMessage({ command: 'resetOrder' });
+        showToast(i18n['dashboard.resetOrder'] || 'Reset Order', 'success');
     }
 
     function handleMessage(event) {

@@ -164,6 +164,7 @@ export type WebviewMessageType =
     | 'togglePin'
     | 'toggleCredits'
     | 'updateOrder'
+    | 'resetOrder'
     | 'retry'
     | 'openLogs';
 
