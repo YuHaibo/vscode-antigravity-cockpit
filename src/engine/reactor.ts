@@ -231,6 +231,20 @@ export class ReactorCore {
         }
 
         const configs: ClientModelConfig[] = status.cascadeModelConfigData?.clientModelConfigs || [];
+        const modelSorts = status.cascadeModelConfigData?.clientModelSorts || [];
+
+        // 构建排序顺序映射（从 clientModelSorts 获取）
+        const sortOrderMap = new Map<string, number>();
+        if (modelSorts.length > 0) {
+            // 使用第一个排序配置（通常是 "Recommended"）
+            const primarySort = modelSorts[0];
+            let index = 0;
+            for (const group of primarySort.groups) {
+                for (const label of group.modelLabels) {
+                    sortOrderMap.set(label, index++);
+                }
+            }
+        }
 
         const models: ModelQuotaInfo[] = configs
             .filter((m): m is ClientModelConfig & { quotaInfo: NonNullable<ClientModelConfig['quotaInfo']> } => 
@@ -255,6 +269,27 @@ export class ReactorCore {
                     timeUntilResetFormatted: this.formatDelta(delta),
                 };
             });
+
+        // 排序：优先使用 clientModelSorts，否则按 label 字母排序
+        models.sort((a, b) => {
+            const indexA = sortOrderMap.get(a.label);
+            const indexB = sortOrderMap.get(b.label);
+
+            // 两个都在排序列表中，按排序列表顺序
+            if (indexA !== undefined && indexB !== undefined) {
+                return indexA - indexB;
+            }
+            // 只有 a 在排序列表中，a 排前面
+            if (indexA !== undefined) {
+                return -1;
+            }
+            // 只有 b 在排序列表中，b 排前面
+            if (indexB !== undefined) {
+                return 1;
+            }
+            // 都不在排序列表中，按 label 字母排序
+            return a.label.localeCompare(b.label);
+        });
 
         return {
             timestamp: new Date(),

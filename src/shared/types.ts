@@ -103,9 +103,21 @@ export interface PlanStatus {
     availableFlowCredits: number;
 }
 
+/** 模型排序分组 */
+export interface ModelSortGroup {
+    modelLabels: string[];
+}
+
+/** 客户端模型排序 */
+export interface ClientModelSort {
+    name: string;
+    groups: ModelSortGroup[];
+}
+
 /** Cascade 模型配置数据 */
 export interface CascadeModelConfigData {
     clientModelConfigs: ClientModelConfig[];
+    clientModelSorts?: ClientModelSort[];
 }
 
 /** 用户状态 */
