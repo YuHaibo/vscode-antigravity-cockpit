@@ -183,6 +183,10 @@ function setupTelemetryHandling(): void {
     reactor.onTelemetry((snapshot: QuotaSnapshot) => {
         const config = configService.getConfig();
 
+        // 成功获取数据，重置错误状态
+        statusBarItem.backgroundColor = undefined;
+        statusBarItem.tooltip = t('statusBar.tooltip');
+
         // 更新 Dashboard
         hud.refreshView(snapshot, {
             showPromptCredits: config.showPromptCredits,
@@ -195,7 +199,8 @@ function setupTelemetryHandling(): void {
     });
 
     reactor.onMalfunction((err: Error) => {
-        statusBarItem.text = `$(error) ${t('statusBar.failure')}`;
+        logger.error(`Reactor Malfunction: ${err.message}`);
+        statusBarItem.text = `$(error) ${t('status.error')}`;
         statusBarItem.tooltip = err.message;
         statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
     });
