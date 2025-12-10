@@ -598,6 +598,44 @@ input:checked + .slider:before {
     margin-top: 10px;
 }
 
+.masked {
+  filter: blur(4px);
+  user-select: none;
+  cursor: default;
+  transition: all 0.3s ease;
+}
+
+.masked:hover {
+  filter: blur(2px);
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  width: 28px;
+  height: 28px;
+}
+
+.icon-btn:hover {
+  opacity: 1;
+  background-color: var(--hover-color);
+  color: var(--primary-color);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .btn-text {
     background: none;
     border: none;
