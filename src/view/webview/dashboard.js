@@ -274,33 +274,57 @@
         dashboard.appendChild(card);
     }
 
-    // State for profile toggle and privacy
+    // State for profile toggle
     let isProfileExpanded = false;
-    let isPrivacyMode = false;
-    let isProfileVisible = true; // New state for overall visibility
-
-    // Icons
-    const ICON_EYE = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 3C4.5 3 1.5 5.5 1.5 8S4.5 13 8 13s6.5-2.5 6.5-5S11.5 3 8 3zm0 9c-2.5 0-5-1.8-5-4s2.5-4 5-4 5 1.8 5 4-2.5 4-5 4z"/><path d="M8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>`;
-    const ICON_EYE_SLASH = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z"/><path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.501 2.501 0 0 1 2.829 2.829l.822.822zm-2.943 1.299.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.501 2.501 0 0 0 2.829 2.829z"/><path d="M3.35 5.47c-.18.16-.353.322-.518.487A13.134 13.134 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7.029 7.029 0 0 1 8 13.5C3 13.5 0 8 0 8s3-5.5 8-5.5c1.724 0 3.229.742 4.316 1.945L12.062 4.7A5.994 5.994 0 0 0 8 3.5c-1.748 0-3.268.804-4.65 1.97z"/><path d="M1.646 2.646a.5.5 0 0 1 .708 0l11 11a.5.5 0 0 1-.708.708l-11-11a.5.5 0 0 1 0-.708z"/></svg>`;
-    const ICON_CHEVRON_UP = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/></svg>`;
-    const ICON_CHEVRON_DOWN = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/></svg>`;
-
-    // Store userInfo for re-rendering on toggle
-    let lastUserInfo = null;
+    let isProfileHidden = false;  // 控制整个计划详情卡片的显示/隐藏
+    let isDataMasked = false;     // 控制数据是否显示为 ***
 
     function renderUserProfile(userInfo) {
-        lastUserInfo = userInfo;
+        // 如果用户选择隐藏计划详情，只渲染一个小的折叠提示
+        if (isProfileHidden) {
+            const card = document.createElement('div');
+            card.className = 'card full-width profile-card profile-collapsed';
+            card.innerHTML = `
+                <div class="card-title collapsed-title">
+                    <span class="label">${i18n['profile.details'] || 'Plan Details'}</span>
+                    <div class="profile-controls">
+                        <button class="icon-btn" id="profile-show-btn" title="${i18n['profile.show'] || 'Show Plan Details'}">
+                            <span class="icon-eye-closed">👁‍🗨</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+            dashboard.appendChild(card);
+            
+            // 绑定显示按钮事件
+            const showBtn = card.querySelector('#profile-show-btn');
+            if (showBtn) {
+                showBtn.addEventListener('click', () => {
+                    isProfileHidden = false;
+                    // 重新渲染需要通过消息触发
+                    vscode.postMessage({ command: 'rerender' });
+                });
+            }
+            return;
+        }
+
         const card = document.createElement('div');
         card.className = 'card full-width profile-card';
 
-        // Helper for features
-        const getFeatureStatus = (enabled) => enabled 
-            ? `<span class="tag success">${i18n['feature.enabled'] || 'Enabled'}</span>`
-            : `<span class="tag disabled">${i18n['feature.disabled'] || 'Disabled'}</span>`;
+        // Helper for features (with masking support)
+        const getFeatureStatus = (enabled) => {
+            if (isDataMasked) return `<span class="tag masked">***</span>`;
+            return enabled 
+                ? `<span class="tag success">${i18n['feature.enabled'] || 'Enabled'}</span>`
+                : `<span class="tag disabled">${i18n['feature.disabled'] || 'Disabled'}</span>`;
+        };
+        
+        // Helper for masking values
+        const maskValue = (value) => isDataMasked ? '***' : value;
 
         // Build Upgrade Info HTML if available
         let upgradeHtml = '';
-        if (userInfo.upgradeText && userInfo.upgradeUri) {
+        if (userInfo.upgradeText && userInfo.upgradeUri && !isDataMasked) {
             upgradeHtml = `
             <div class="upgrade-info">
                 <div class="upgrade-text">${userInfo.upgradeText}</div>
@@ -313,256 +337,173 @@
         const toggleText = isProfileExpanded ? (i18n['profile.less'] || 'Show Less') : (i18n['profile.more'] || 'Show More Details');
         const iconTransform = isProfileExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
         
-        // Privacy icon
-        const privacyIcon = isPrivacyMode ? ICON_EYE_SLASH : ICON_EYE;
-        const privacyTitle = isPrivacyMode ? 'Show sensitive data' : 'Hide sensitive data';
+        // Eye icon state
+        const eyeIcon = isDataMasked ? '👁‍🗨' : '👁';
+        const eyeTitle = isDataMasked ? (i18n['profile.showData'] || 'Show Data') : (i18n['profile.hideData'] || 'Hide Data');
 
-        // Collapse icon
-        const collapseIcon = isProfileVisible ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
-        const collapseTitle = isProfileVisible ? 'Collapse Profile' : 'Expand Profile';
-        const contentClass = isProfileVisible ? 'profile-content' : 'profile-content hidden';
 
         card.innerHTML = `
             <div class="card-title">
-                <span class="label">${i18n['profile.details'] || 'User Profile'}</span>
-                <div class="header-actions">
-                    <button class="icon-btn" id="privacy-toggle" title="${privacyTitle}">
-                        ${privacyIcon}
+                <span class="label">${i18n['profile.details'] || 'Plan Details'}</span>
+                <div class="profile-controls">
+                    <button class="icon-btn" id="profile-mask-btn" title="${eyeTitle}">
+                        <span class="icon-eye">${eyeIcon}</span>
                     </button>
-                    <button class="icon-btn" id="visibility-toggle" title="${collapseTitle}">
-                        ${collapseIcon}
+                    <button class="icon-btn" id="profile-hide-btn" title="${i18n['profile.hide'] || 'Hide Plan Details'}">
+                        <span class="icon-hide">✕</span>
                     </button>
                     <div class="tier-badge">${userInfo.tier}</div>
                 </div>
             </div>
             
-            <div id="profile-main-content" class="${contentClass}">
+            <div class="profile-grid">
+                ${createDetailItem(i18n['profile.email'] || 'Email', maskValue(userInfo.email))}
+                ${createDetailItem(i18n['profile.description'] || 'Description', maskValue(userInfo.tierDescription))}
+                ${createDetailItem(i18n['feature.webSearch'] || 'Web Search', getFeatureStatus(userInfo.cascadeWebSearchEnabled))}
+                ${createDetailItem(i18n['feature.browser'] || 'Browser Access', getFeatureStatus(userInfo.browserEnabled))}
+                ${createDetailItem(i18n['feature.knowledgeBase'] || 'Knowledge Base', getFeatureStatus(userInfo.knowledgeBaseEnabled))}
+                ${createDetailItem(i18n['feature.mcp'] || 'MCP Servers', getFeatureStatus(userInfo.allowMcpServers))}
+                ${createDetailItem(i18n['feature.gitCommit'] || 'Git Commit', getFeatureStatus(userInfo.canGenerateCommitMessages))}
+                ${createDetailItem(i18n['feature.context'] || 'Context Window', maskValue(userInfo.maxNumChatInputTokens))}
+            </div>
+
+            <div class="${detailsClass}" id="profile-more">
                 <div class="profile-grid">
-                    ${createDetailItem(i18n['profile.email'] || 'Email', userInfo.email, true)}
-                    ${createDetailItem(i18n['profile.description'] || 'Description', userInfo.tierDescription)}
-                    ${createDetailItem(i18n['feature.webSearch'] || 'Web Search', getFeatureStatus(userInfo.cascadeWebSearchEnabled))}
-                    ${createDetailItem(i18n['feature.browser'] || 'Browser Access', getFeatureStatus(userInfo.browserEnabled))}
-                    ${createDetailItem(i18n['feature.knowledgeBase'] || 'Knowledge Base', getFeatureStatus(userInfo.knowledgeBaseEnabled))}
-                    ${createDetailItem(i18n['feature.mcp'] || 'MCP Servers', getFeatureStatus(userInfo.allowMcpServers))}
-                    ${createDetailItem(i18n['feature.gitCommit'] || 'Git Commit', getFeatureStatus(userInfo.canGenerateCommitMessages))}
-                    ${createDetailItem(i18n['feature.context'] || 'Context Window', userInfo.maxNumChatInputTokens)}
+                    ${createDetailItem(i18n['feature.fastMode'] || 'Fast Mode', getFeatureStatus(userInfo.hasAutocompleteFastMode))}
+                    ${createDetailItem(i18n['feature.moreCredits'] || 'Can Buy Credits', getFeatureStatus(userInfo.canBuyMoreCredits))}
+                    
+                    ${createDetailItem(i18n['profile.teamsTier'] || 'Teams Tier', maskValue(userInfo.teamsTier))}
+                    ${createDetailItem(i18n['profile.userId'] || 'Tier ID', maskValue(userInfo.userTierId || 'N/A'))}
+                    ${createDetailItem(i18n['profile.tabToJump'] || 'Tab To Jump', getFeatureStatus(userInfo.hasTabToJump))}
+                    ${createDetailItem(i18n['profile.stickyModels'] || 'Sticky Models', getFeatureStatus(userInfo.allowStickyPremiumModels))}
+                    ${createDetailItem(i18n['profile.commandModels'] || 'Command Models', getFeatureStatus(userInfo.allowPremiumCommandModels))}
+                    ${createDetailItem(i18n['profile.maxPremiumMsgs'] || 'Max Premium Msgs', maskValue(userInfo.maxNumPremiumChatMessages))}
+                    ${createDetailItem(i18n['profile.chatInstructionsCharLimit'] || 'Chat Instructions Char Limit', maskValue(userInfo.maxCustomChatInstructionCharacters))}
+                    ${createDetailItem(i18n['profile.pinnedContextItems'] || 'Pinned Context Items', maskValue(userInfo.maxNumPinnedContextItems))}
+                    ${createDetailItem(i18n['profile.localIndexSize'] || 'Local Index Size', maskValue(userInfo.maxLocalIndexSize))}
+                    ${createDetailItem(i18n['profile.acceptedTos'] || 'Accepted TOS', getFeatureStatus(userInfo.acceptedLatestTermsOfService))}
+                    ${createDetailItem(i18n['profile.customizeIcon'] || 'Customize Icon', getFeatureStatus(userInfo.canCustomizeAppIcon))}
+                    ${createDetailItem(i18n['profile.cascadeAutoRun'] || 'Cascade Auto Run', getFeatureStatus(userInfo.cascadeCanAutoRunCommands))}
+                    ${createDetailItem(i18n['profile.cascadeBackground'] || 'Cascade Background', getFeatureStatus(userInfo.canAllowCascadeInBackground))}
+                    ${createDetailItem(i18n['profile.autoRunCommands'] || 'Auto Run Commands', getFeatureStatus(userInfo.allowAutoRunCommands))}
+                    ${createDetailItem(i18n['profile.expBrowserFeatures'] || 'Exp. Browser Features', getFeatureStatus(userInfo.allowBrowserExperimentalFeatures))}
                 </div>
+                ${upgradeHtml}
+            </div>
 
-                <div class="${detailsClass}" id="profile-more">
-                    <div class="profile-grid">
-                        ${createDetailItem(i18n['feature.fastMode'] || 'Fast Mode', getFeatureStatus(userInfo.hasAutocompleteFastMode))}
-                        ${createDetailItem(i18n['feature.moreCredits'] || 'Can Buy Credits', getFeatureStatus(userInfo.canBuyMoreCredits))}
-                        
-                        ${createDetailItem(i18n['profile.teamsTier'] || 'Teams Tier', userInfo.teamsTier)}
-                        ${createDetailItem(i18n['profile.userId'] || 'Internal Tier ID', userInfo.userTierId || 'N/A', true)}
-                        ${createDetailItem(i18n['profile.tabToJump'] || 'Tab To Jump', getFeatureStatus(userInfo.hasTabToJump))}
-                        ${createDetailItem(i18n['profile.stickyModels'] || 'Sticky Models', getFeatureStatus(userInfo.allowStickyPremiumModels))}
-                        ${createDetailItem(i18n['profile.commandModels'] || 'Command Models', getFeatureStatus(userInfo.allowPremiumCommandModels))}
-                        ${createDetailItem(i18n['profile.maxPremiumMsgs'] || 'Max Premium Msgs', userInfo.maxNumPremiumChatMessages)}
-                        ${createDetailItem(i18n['profile.chatInstructionsCharLimit'] || 'Chat Instructions Char Limit', userInfo.maxCustomChatInstructionCharacters)}
-                        ${createDetailItem(i18n['profile.pinnedContextItems'] || 'Pinned Context Items', userInfo.maxNumPinnedContextItems)}
-                        ${createDetailItem(i18n['profile.localIndexSize'] || 'Local Index Size', userInfo.maxLocalIndexSize)}
-                        ${createDetailItem(i18n['profile.acceptedTos'] || 'Accepted TOS', getFeatureStatus(userInfo.acceptedLatestTermsOfService))}
-                        ${createDetailItem(i18n['profile.customizeIcon'] || 'Customize Icon', getFeatureStatus(userInfo.canCustomizeAppIcon))}
-                        ${createDetailItem(i18n['profile.cascadeAutoRun'] || 'Cascade Auto Run', getFeatureStatus(userInfo.cascadeCanAutoRunCommands))}
-                        ${createDetailItem(i18n['profile.cascadeBackground'] || 'Cascade Background', getFeatureStatus(userInfo.canAllowCascadeInBackground))}
-                        ${createDetailItem(i18n['profile.autoRunCommands'] || 'Auto Run Commands', getFeatureStatus(userInfo.allowAutoRunCommands))}
-                        ${createDetailItem(i18n['profile.expBrowserFeatures'] || 'Exp. Browser Features', getFeatureStatus(userInfo.allowBrowserExperimentalFeatures))}
-                    </div>
-                    ${upgradeHtml}
-                </div>
-
-                <div class="profile-toggle">
-                    <button class="btn-text" id="profile-toggle-btn">
-                        <span id="profile-toggle-text">${toggleText}</span> 
-                        <span id="profile-toggle-icon" style="transform: ${iconTransform}">▼</span>
-                    </button>
-                </div>
+            <div class="profile-toggle">
+                <button class="btn-text" id="profile-toggle-btn">
+                    <span id="profile-toggle-text">${toggleText}</span> 
+                    <span id="profile-toggle-icon" style="transform: ${iconTransform}">▼</span>
+                </button>
             </div>
         `;
         dashboard.appendChild(card);
         
-        // Bind event listeners
+        // Bind event listeners after element creation
         const toggleBtn = card.querySelector('#profile-toggle-btn');
         if (toggleBtn) {
             toggleBtn.addEventListener('click', toggleProfileDetails);
         }
-
-        const privacyBtn = card.querySelector('#privacy-toggle');
-        if (privacyBtn) {
-            privacyBtn.addEventListener('click', togglePrivacyMode);
+        
+        const maskBtn = card.querySelector('#profile-mask-btn');
+        if (maskBtn) {
+            maskBtn.addEventListener('click', () => {
+                isDataMasked = !isDataMasked;
+                vscode.postMessage({ command: 'rerender' });
+            });
         }
-
-        const visibilityBtn = card.querySelector('#visibility-toggle');
-        if (visibilityBtn) {
-            visibilityBtn.addEventListener('click', toggleProfileVisibility);
+        
+        const hideBtn = card.querySelector('#profile-hide-btn');
+        if (hideBtn) {
+            hideBtn.addEventListener('click', () => {
+                isProfileHidden = true;
+                vscode.postMessage({ command: 'rerender' });
+            });
         }
     }
 
     // Toggle detailed profile info
     function toggleProfileDetails() {
-        // Update state but don't re-render entire card to avoid flicker
-        isProfileExpanded = !isProfileExpanded;
         const details = document.getElementById('profile-more');
         const text = document.getElementById('profile-toggle-text');
         const icon = document.getElementById('profile-toggle-icon');
         
-        if (isProfileExpanded) {
+        if (details.classList.contains('hidden')) {
             details.classList.remove('hidden');
             text.textContent = i18n['profile.less'] || 'Show Less';
             icon.style.transform = 'rotate(180deg)';
+            isProfileExpanded = true;
         } else {
             details.classList.add('hidden');
             text.textContent = i18n['profile.more'] || 'Show More Details';
             icon.style.transform = 'rotate(0deg)';
+            isProfileExpanded = false;
         }
-        
-        // Save state
-        const state = vscode.getState() || {};
-        vscode.setState({ ...state, isProfileExpanded });
     };
 
-    function togglePrivacyMode() {
-        isPrivacyMode = !isPrivacyMode;
-        
-        // Save state
-        const state = vscode.getState() || {};
-        vscode.setState({ ...state, isPrivacyMode });
-
-        // Re-render entire dashboard to maintain order
-        if (lastSnapshot) {
-            render(lastSnapshot, lastConfig);
-        }
-    }
-
-    function toggleProfileVisibility() {
-        isProfileVisible = !isProfileVisible;
-        
-        // Save state
-        const state = vscode.getState() || {};
-        vscode.setState({ ...state, isProfileVisible });
-
-        // Re-render to update icon and visibility
-        if (lastSnapshot) {
-            render(lastSnapshot, lastConfig);
-        }
-    }
-
-    function createDetailItem(label, value, sensitive = false) {
-        let displayValue = value;
-        if (sensitive && isPrivacyMode) {
-            displayValue = '******';
-        }
+    function createDetailItem(label, value) {
         return `
             <div class="detail-item">
                 <span class="detail-label">${label}</span>
-                <span class="detail-value ${sensitive && isPrivacyMode ? 'masked' : ''}">${displayValue}</span>
+                <span class="detail-value">${value}</span>
             </div>
         `;
-    } 
-    
-    // ... inside init() ...
-    function init() {
-         // 恢复状态
-        const state = vscode.getState() || {};
-        if (state.lastRefresh) {
-            const now = Date.now();
-            const diff = Math.floor((now - state.lastRefresh) / 1000);
-            if (diff < 60) {
-                startCooldown(60 - diff);
-            }
-        }
-        if (typeof state.isProfileExpanded !== 'undefined') isProfileExpanded = state.isProfileExpanded;
-        if (typeof state.isPrivacyMode !== 'undefined') isPrivacyMode = state.isPrivacyMode;
-        if (typeof state.isProfileVisible !== 'undefined') isProfileVisible = state.isProfileVisible;
-    
-        // 绑定事件
-        // 绑定事件
-        refreshBtn.addEventListener('click', handleRefresh);
-        if (resetOrderBtn) {
-            resetOrderBtn.addEventListener('click', handleResetOrder);
-        }
-
-        // 事件委托：处理置顶开关
-        dashboard.addEventListener('change', (e) => {
-            if (e.target.classList.contains('pin-toggle')) {
-                const modelId = e.target.getAttribute('data-model-id');
-                if (modelId) {
-                    togglePin(modelId);
-                }
-            }
-        });
-
-        // 监听消息
-        window.addEventListener('message', handleMessage);
-
-        // 通知扩展已准备就绪
-        vscode.postMessage({ command: 'init' });
     }
 
-    let lastSnapshot = null;
-    let lastConfig = null;
+    function renderModelCard(model, pinnedModels) {
+        const pct = model.remainingPercentage || 0;
+        const color = getHealthColor(pct);
+        const isPinned = pinnedModels.includes(model.modelId);
 
 
-    // ============ 渲染 ============
-
-    function render(snapshot, config) {
-        lastSnapshot = snapshot;
-        lastConfig = config;
-
-        statusDiv.style.display = 'none';
-        dashboard.innerHTML = '';
-
-        // 检查离线状态
-        if (!snapshot.isConnected) {
-            renderOfflineCard(snapshot.errorMessage);
-            return;
-        }
-
-        // Render User Profile (if available) - New Section
-        if (snapshot.userInfo) {
-            renderUserProfile(snapshot.userInfo);
-        }
-
-        // 模型排序
-        let models = [...snapshot.models];
-        if (config?.modelOrder?.length > 0) {
-            const orderMap = new Map();
-            config.modelOrder.forEach((id, index) => orderMap.set(id, index));
-
-            models.sort((a, b) => {
-                const idxA = orderMap.has(a.modelId) ? orderMap.get(a.modelId) : 99999;
-                const idxB = orderMap.has(b.modelId) ? orderMap.get(b.modelId) : 99999;
-                return idxA - idxB;
-            });
-        }
-
-        // 渲染模型卡片
-        models.forEach(model => {
-            renderModelCard(model, config?.pinnedModels || []);
-        });
-    }
-
-    function renderOfflineCard(errorMessage) {
         const card = document.createElement('div');
-        card.className = 'offline-card';
+        card.className = 'card draggable';
+        card.setAttribute('draggable', 'true');
+        card.setAttribute('data-id', model.modelId);
+
+        // 绑定拖拽事件
+        card.addEventListener('dragstart', handleDragStart, false);
+        card.addEventListener('dragenter', handleDragEnter, false);
+        card.addEventListener('dragover', handleDragOver, false);
+        card.addEventListener('dragleave', handleDragLeave, false);
+        card.addEventListener('drop', handleDrop, false);
+        card.addEventListener('dragend', handleDragEnd, false);
+
         card.innerHTML = `
-            <div class="icon">🚀</div>
-            <h2>${i18n['dashboard.offline'] || 'Systems Offline'}</h2>
-            <p>${errorMessage || i18n['dashboard.offlineDesc'] || 'Could not detect Antigravity process. Please ensure Antigravity is running.'}</p>
-            <div class="offline-actions">
-                <button class="btn-primary" onclick="retryConnection()">
-                    ${i18n['help.retry'] || 'Retry Connection'}
-                </button>
-                <button class="btn-secondary" onclick="openLogs()">
-                    ${i18n['help.openLogs'] || 'Open Logs'}
-                </button>
+            <div class="card-title">
+                <span class="drag-handle" data-tooltip="${i18n['dashboard.dragHint'] || 'Drag to reorder'}">⋮⋮</span>
+                <span class="label" title="${model.modelId}">${model.label}</span>
+                <div class="actions">
+                    <label class="switch" data-tooltip="${i18n['dashboard.pinHint'] || 'Pin to Status Bar'}">
+                        <input type="checkbox" class="pin-toggle" data-model-id="${model.modelId}" ${isPinned ? 'checked' : ''}>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="status-dot" style="background-color: ${color}"></span>
+                </div>
+            </div>
+            <div class="progress-circle" style="background: conic-gradient(${color} ${pct}%, var(--border-color) ${pct}%);">
+                <div class="percentage">${pct.toFixed(2)}%</div>
+            </div>
+            <div class="info-row">
+                <span>${i18n['dashboard.resetIn'] || 'Reset In'}</span>
+                <span class="info-value">${model.timeUntilResetFormatted}</span>
+            </div>
+            <div class="info-row">
+                <span>${i18n['dashboard.resetTime'] || 'Reset Time'}</span>
+                <span class="info-value small">${model.resetTimeDisplay || 'N/A'}</span>
+            </div>
+            <div class="info-row">
+                <span>${i18n['dashboard.status'] || 'Status'}</span>
+                <span class="info-value" style="color: ${color}">
+                    ${model.isExhausted 
+                        ? (i18n['dashboard.exhausted'] || 'Exhausted') 
+                        : (i18n['dashboard.active'] || 'Active')}
+                </span>
             </div>
         `;
         dashboard.appendChild(card);
     }
-
-
 
     // ============ 启动 ============
 

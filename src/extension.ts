@@ -172,6 +172,11 @@ function setupMessageHandling(): void {
                 logger.info('User opened logs');
                 logger.show();
                 break;
+
+            case 'rerender':
+                logger.info('Dashboard requested re-render');
+                reactor.reprocess();
+                break;
         }
     });
 }

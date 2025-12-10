@@ -97,6 +97,10 @@ const translations: Record<SupportedLocale, TranslationMap> = {
         'profile.cascadeBackground': 'Cascade Background',
         'profile.autoRunCommands': 'Auto Run Commands',
         'profile.expBrowserFeatures': 'Exp. Browser Features',
+        'profile.hide': 'Hide Plan Details',
+        'profile.show': 'Show Plan Details',
+        'profile.hideData': 'Hide Data',
+        'profile.showData': 'Show Data',
     },
     'zh-cn': {
         // 状态栏
@@ -180,6 +184,10 @@ const translations: Record<SupportedLocale, TranslationMap> = {
         'profile.cascadeBackground': '后台 Cascade',
         'profile.autoRunCommands': '自动运行命令',
         'profile.expBrowserFeatures': '实验性浏览器功能',
+        'profile.hide': '隐藏计划详情',
+        'profile.show': '显示计划详情',
+        'profile.hideData': '隐藏数据',
+        'profile.showData': '显示数据',
     },
 };
 

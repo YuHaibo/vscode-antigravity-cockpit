@@ -217,7 +217,8 @@ export type WebviewMessageType =
     | 'updateOrder'
     | 'resetOrder'
     | 'retry'
-    | 'openLogs';
+    | 'openLogs'
+    | 'rerender';
 
 /** Webview 消息 */
 export interface WebviewMessage {
