@@ -189,9 +189,19 @@ function setupMessageHandling(): void {
                 const enabled = await configService.toggleGroupingEnabled();
                 // 用户期望：切换到分组模式时，状态栏默认也显示分组
                 if (enabled) {
-                    const config = configService.getConfig();
+                    let config = configService.getConfig();
                     if (!config.groupingShowInStatusBar) {
                         await configService.updateConfig('groupingShowInStatusBar', true);
+                    }
+                    
+                    // 首次开启分组时（groupMappings 为空），自动执行分组
+                    if (Object.keys(config.groupMappings).length === 0) {
+                        const latestSnapshot = reactor.getLatestSnapshot();
+                        if (latestSnapshot && latestSnapshot.models.length > 0) {
+                            const newMappings = ReactorCore.calculateGroupMappings(latestSnapshot.models);
+                            await configService.updateGroupMappings(newMappings);
+                            logger.info(`First-time grouping: auto-grouped ${Object.keys(newMappings).length} models`);
+                        }
                     }
                 }
                 // 使用缓存数据重新渲染
