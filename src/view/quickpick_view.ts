@@ -9,13 +9,14 @@ import { QuotaSnapshot, ModelQuotaInfo } from '../shared/types';
 import { configService } from '../shared/config_service';
 import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';
+import { DISPLAY_MODE } from '../shared/constants';
 
 /** QuickPick 项扩展接口 */
 interface QuotaQuickPickItem extends vscode.QuickPickItem {
     /** 模型 ID（用于置顶操作） */
     modelId?: string;
     /** 操作类型 */
-    action?: 'refresh' | 'logs' | 'settings';
+    action?: 'refresh' | 'logs' | 'settings' | 'switchToWebview';
 }
 
 /**
@@ -176,6 +177,12 @@ export class QuickPickView {
             action: 'settings',
         });
 
+        items.push({
+            label: `$(browser) ${t('quickpick.switchToWebview')}`,
+            description: '',
+            action: 'switchToWebview',
+        });
+
         return items;
     }
 
@@ -192,7 +199,7 @@ export class QuickPickView {
     /**
      * 处理操作
      */
-    private async handleAction(action: 'refresh' | 'logs' | 'settings'): Promise<void> {
+    private async handleAction(action: 'refresh' | 'logs' | 'settings' | 'switchToWebview'): Promise<void> {
         switch (action) {
             case 'refresh':
                 if (this.refreshCallback) {
@@ -204,6 +211,12 @@ export class QuickPickView {
                 break;
             case 'settings':
                 vscode.commands.executeCommand('workbench.action.openSettings', 'agCockpit');
+                break;
+            case 'switchToWebview':
+                await configService.updateConfig('displayMode', DISPLAY_MODE.WEBVIEW);
+                vscode.window.showInformationMessage(t('quickpick.switchedToWebview'));
+                // 重新打开 Dashboard（这次会用 Webview）
+                vscode.commands.executeCommand('agCockpit.open');
                 break;
         }
     }

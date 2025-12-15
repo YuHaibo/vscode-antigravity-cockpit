@@ -151,6 +151,8 @@ const translations: Record<SupportedLocale, TranslationMap> = {
         'quickpick.actionsSection': 'Actions',
         'quickpick.noData': 'No quota data',
         'quickpick.openSettings': 'Open Settings',
+        'quickpick.switchToWebview': 'Switch to Webview Mode',
+        'quickpick.switchedToWebview': 'Switched to Webview mode.',
         // Webview fallback
         'webview.failedPrompt': 'Failed to load Webview. Switch to QuickPick compatibility mode?',
         'webview.switchToQuickPick': 'Switch',
@@ -293,6 +295,8 @@ const translations: Record<SupportedLocale, TranslationMap> = {
         'quickpick.actionsSection': '操作',
         'quickpick.noData': '暂无配额数据',
         'quickpick.openSettings': '打开设置',
+        'quickpick.switchToWebview': '切换到 Webview 模式',
+        'quickpick.switchedToWebview': '已切换到 Webview 模式。',
         // Webview fallback
         'webview.failedPrompt': 'Webview 加载失败，是否切换到 QuickPick 兼容模式？',
         'webview.switchToQuickPick': '切换',

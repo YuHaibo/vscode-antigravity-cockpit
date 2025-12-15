@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.23] - 2025-12-15
+
+### Added
+- QuickPick mode: Add "Switch to Webview Mode" button for easy mode switching
+
+---
+
 ## [1.4.22] - 2025-12-15
 
 ### Added
