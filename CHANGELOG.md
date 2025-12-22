@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.22] - 2025-12-22
+
+### Fixed
+- **Dashboard Update**: Fixed an issue where the dashboard panel would not update with fresh data if it was in the background during an auto-refresh.
+- **Quota Precision**: Fixed a discrepancy in quota percentage display between the dashboard (List View) and Status Bar. Both now consistently round down (floor) to the nearest integer.
+
 ## [1.5.21] - 2025-12-22
 
 ### Improved

@@ -132,7 +132,7 @@ export class CockpitHUD {
         this.cachedTelemetry = snapshot;
         const panel = this.panels.get('main');
         
-        if (panel?.visible) {
+        if (panel) {
             // 转换数据为 Webview 兼容格式
             const webviewData = this.convertToWebviewFormat(snapshot);
             

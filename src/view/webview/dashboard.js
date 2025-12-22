@@ -748,7 +748,7 @@
             if (!isChild) {
                 statusCol = `
                     <div class="list-progress-circle" style="background: conic-gradient(${color} ${pct}%, var(--border-color) ${pct}%);">
-                        <span class="list-progress-text" style="color: ${color}">${pct.toFixed(0)}%</span>
+                        <span class="list-progress-text" style="color: ${color}">${Math.floor(pct)}%</span>
                     </div>
                 `;
             } else {
