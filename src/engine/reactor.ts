@@ -530,17 +530,33 @@ export class ReactorCore {
 
     /**
      * 格式化时间差
+     * - < 60分钟: 显示 Xm
+     * - < 24小时: 显示 Xh Ym
+     * - >= 24小时: 显示 Xd Yh Zm
      */
     private formatDelta(ms: number): string {
         if (ms <= 0) {
             return t('dashboard.online');
         }
-        const m = Math.ceil(ms / 60000);
-        if (m < 60) {
-            return `${m}m`;
+        const totalMinutes = Math.ceil(ms / 60000);
+        
+        // 小于 60 分钟：只显示分钟
+        if (totalMinutes < 60) {
+            return `${totalMinutes}m`;
         }
-        const h = Math.floor(m / 60);
-        return `${h}h ${m % 60}m`;
+        
+        const totalHours = Math.floor(totalMinutes / 60);
+        const remainingMinutes = totalMinutes % 60;
+        
+        // 小于 24 小时：显示小时和分钟
+        if (totalHours < 24) {
+            return `${totalHours}h ${remainingMinutes}m`;
+        }
+        
+        // >= 24 小时：显示天、小时、分钟
+        const days = Math.floor(totalHours / 24);
+        const remainingHours = totalHours % 24;
+        return `${days}d ${remainingHours}h ${remainingMinutes}m`;
     }
 
     /**

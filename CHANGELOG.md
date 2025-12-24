@@ -8,12 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.5.33] - 2025-12-23
+## [1.5.34]
+
+### Improved
+- **Remaining Time Display**: Adaptive time format for better readability
+  - Less than 60 minutes: `Xm` (e.g., `45m`)
+  - Less than 24 hours: `Xh Ym` (e.g., `4h 57m`)
+  - 24 hours or more: `Xd Yh Zm` (e.g., `1d 2h 30m`)
+
+## [1.5.33]
 
 ### Fixed
 - **Data Masking**: Added missing `agCockpit.dataMasked` configuration declaration in `package.json`, fixing the issue where "Hide Data" button had no effect.
 
-## [1.5.32] - 2025-12-23
+## [1.5.32]
 
 ### Fixed
 - **Translation Key**: Fixed incorrect translation key `status.error` → `statusBar.error` in status bar controller.
@@ -24,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **UX**: Changed reset countdown text from "Restored" to "Restoring Soon" for more accurate representation (quota restore has latency).
 - **i18n**: Updated `dashboard.online` translations in all 14 languages.
 
-## [1.5.31] - 2025-12-23
+## [1.5.31]
 
 ### Fixed
 - **Memory Leak**: Fixed event listener leak in Logger service - now properly disposes configuration change listener.
@@ -33,7 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Improved
 - **Code Cleanup**: Removed unused variables and imports across multiple files.
 
-## [1.5.30] - 2025-12-23
+## [1.5.30]
 
 ### Added
 - **Unit Testing**: Integrated Jest framework and added tests for process detection logic.
@@ -43,7 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Build**: Reduced VSIX package size from 216 KB to 162 KB.
 - **Clean up**: Removed legacy files from build output.
 
-## [1.5.23] - 2025-12-23
+## [1.5.23]
 
 ### Improved
 - **Detection**: Refined Antigravity process detection by requiring server port + CSRF token and removing path-based matching to avoid false positives.
@@ -53,20 +61,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - **Status Bar**: Corrected status bar tooltip to display user tier name instead of internal ID.
 
-## [1.5.22] - 2025-12-22
+## [1.5.22]
 
 ### Fixed
 - **Dashboard Update**: Fixed an issue where the dashboard panel would not update with fresh data if it was in the background during an auto-refresh.
 - **Quota Precision**: Fixed a discrepancy in quota percentage display between the dashboard (List View) and Status Bar. Both now consistently round down (floor) to the nearest integer.
 
-## [1.5.21] - 2025-12-22
+## [1.5.21]
 
 ### Improved
 - **Docs**: Rewrote README with feature list overview
 
 ---
 
-## [1.5.20] - 2025-12-21
+## [1.5.20]
 
 ### Added
 - **QuickPick Mode**: Full grouping mode support - now mirrors Webview's grouping functionality
@@ -82,7 +90,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.5.19] - 2025-12-21
+## [1.5.19]
 
 ### Improved
 - **QuickPick Mode**: Partial refresh when toggling pin status - only update the clicked item instead of rebuilding the entire list
@@ -90,13 +98,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.5.18] - 2025-12-19
+## [1.5.18]
 
 ### Improved
 - **Code Architecture**: Refactored `extension.ts` into modular controllers for better maintainability and performance.
 - **UI Alignment**: Fixed progress bar alignment issues on Windows by switching to cross-platform compatible block characters.
 
-## [1.5.17] - 2025-12-19
+## [1.5.17]
 
 ### Added
 - **List View Mode**: New table-style view for quota display
@@ -104,7 +112,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.5.16] - 2025-12-19
+## [1.5.16]
 
 ### Added
 - **Multi-Language Support**: Extended i18n support from 2 to 14 languages
@@ -129,7 +137,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.5.15] - 2025-12-18
+## [1.5.15]
 
 ### Improved
 - **Model Capabilities**: Added rich tooltips for model capabilities, triggered by hovering over the model name.
@@ -137,26 +145,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.5.14] - 2025-12-18
+## [1.5.14]
 
 ### Improved
 - **Grouping Mode Guidance**: Added explanatory text to the top of the grouping mode view to guide users on auto-grouping and mode switching.
 
-## [1.5.13] - 2025-12-18
+## [1.5.13]
 
 ### Added
 - **First-Run Auto-Grouping**: Automatically calculate and save group mappings on first startup when grouping is enabled but no mappings exist
 
 ---
 
-## [1.5.12] - 2025-12-17
+## [1.5.12]
 
 ### Fixed
 - **Status Colors**: Reverted to vibrant status colors (using terminal/chart colors instead of dull icon colors) for better visibility
 
 ---
 
-## [1.5.11] - 2025-12-16
+## [1.5.11]
 
 ### Added
 - **Name + Percent Mode**: New status bar format showing `Sonnet: 95%` (without status dot)
@@ -172,7 +180,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.5.1] - 2025-12-16
+## [1.5.1]
 
 ### Added
 - **Reset Name Button**: Add "Reset" button in rename modal to quickly restore original name
@@ -185,7 +193,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.5.0] - 2025-12-16
+## [1.5.0]
 
 ### Added
 - **Model Rename**: Rename individual models in non-grouping mode (click ✏️ icon on model cards)
@@ -202,21 +210,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.24] - 2025-12-15
+## [1.4.24]
 
 ### Changed
 - QuickPick mode: Use emoji icons for better visibility across all themes
 
 ---
 
-## [1.4.23] - 2025-12-15
+## [1.4.23]
 
 ### Added
 - QuickPick mode: Add "Switch to Webview Mode" button for easy mode switching
 
 ---
 
-## [1.4.22] - 2025-12-15
+## [1.4.22]
 
 ### Added
 - QuickPick compatibility mode: Use VSCode native QuickPick API instead of Webview
@@ -227,7 +235,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.21] - 2025-12-15
+## [1.4.21]
 
 ### Changed
 - Docs: split English/Chinese READMEs and CHANGELOGs with language switch links
@@ -235,7 +243,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.20] - 2025-12-15
+## [1.4.20]
 
 ### Fixed
 - Fix startup crash when the service is not ready (500) causing `Cannot read properties of undefined`
@@ -246,14 +254,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.19] - 2025-12-13
+## [1.4.19]
 
 ### Security
 - Mask sensitive data (`csrf_token`) in diagnostic logs to prevent leakage
 
 ---
 
-## [1.4.18] - 2025-12-13
+## [1.4.18]
 
 ### Added
 - Add a dedicated `CHANGELOG.md` to track version history
@@ -264,14 +272,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.17] - 2025-12-13
+## [1.4.17]
 
 ### Added
 - Print extension version in startup logs for easier debugging
 
 ---
 
-## [1.4.16] - 2025-12-13
+## [1.4.16]
 
 ### Fixed
 - Improve process detection to precisely match Antigravity processes
@@ -280,7 +288,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.15] - 2025-12-13
+## [1.4.15]
 
 ### Fixed
 - Fix all ESLint errors (23 → 0)
@@ -298,7 +306,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.14] - 2025-12-12
+## [1.4.14]
 
 ### Fixed
 - Fix process detection in multi-process scenarios
@@ -306,7 +314,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.13] - 2025-12-12
+## [1.4.13]
 
 ### Changed
 - Rename groups via a modal input dialog
@@ -314,7 +322,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.12] - 2025-12-12
+## [1.4.12]
 
 ### Fixed
 - Fix PowerShell cold-start timeout issues
@@ -322,14 +330,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.11] - 2025-12-12
+## [1.4.11]
 
 ### Changed
 - Version number cleanup
 
 ---
 
-## [1.4.1] - 2025-12-11
+## [1.4.1]
 
 ### Added
 - Toggle for quota threshold notifications
@@ -340,7 +348,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.4.0] - 2025-12-11
+## [1.4.0]
 
 ### Added
 - Configurable warning/critical thresholds
@@ -354,7 +362,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.3.14] - 2025-12-10
+## [1.3.14]
 
 ### Added
 - Add fallback keyword search via `csrf_token` to find processes
@@ -364,7 +372,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.3.12] - 2025-12-08
+## [1.3.12]
 
 ### Fixed
 - Fix dashboard status logic
@@ -373,7 +381,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.3.1] - 2025-12-07
+## [1.3.1]
 
 ### Added
 - Color status indicator in status bar (🟢🟡🔴)
@@ -385,7 +393,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.3.0] - 2025-12-07
+## [1.3.0]
 
 ### Added
 - Tooltip alignment improvements
@@ -394,14 +402,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.2.16] - 2025-12-06
+## [1.2.16]
 
 ### Added
 - Auto-group on first switch to grouping mode
 
 ---
 
-## [1.2.15] - 2025-12-06
+## [1.2.15]
 
 ### Added
 - Manual auto-grouping action
@@ -409,35 +417,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.2.13] - 2025-12-05
+## [1.2.13]
 
 ### Fixed
 - Ensure auto-pin runs before UI refresh
 
 ---
 
-## [1.2.12] - 2025-12-05
+## [1.2.12]
 
 ### Fixed
 - Use stable `groupId` based on model IDs
 
 ---
 
-## [1.2.11] - 2025-12-05
+## [1.2.11]
 
 ### Fixed
 - Multiple improvements and bug fixes
 
 ---
 
-## [1.2.1] - 2025-12-04
+## [1.2.1]
 
 ### Fixed
 - Auto-pin all groups when grouping is first enabled
 
 ---
 
-## [1.2.0] - 2025-12-04
+## [1.2.0]
 
 ### Added
 - Quota grouping feature
@@ -447,21 +455,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.1.153] - 2025-12-03
+## [1.1.153]
 
 ### Added
 - Toggle trend chart visibility
 
 ---
 
-## [1.1.152] - 2025-12-03
+## [1.1.152]
 
 ### Added
 - Quota history charts (keep 7 days of data)
 
 ---
 
-## [1.1.151] - 2025-12-02
+## [1.1.151]
 
 ### Improved
 - Simplify profile controls
@@ -470,7 +478,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.1.150] - 2025-12-02
+## [1.1.150]
 
 ### Added
 - Profile visibility toggle
@@ -478,7 +486,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.1.149] - 2025-12-02
+## [1.1.149]
 
 ### Added
 - Privacy mode
@@ -486,7 +494,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.1.148] - 2025-12-01
+## [1.1.148]
 
 ### Fixed
 - Remove Prompt Credits setting
@@ -494,42 +502,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.1.147] - 2025-12-01
+## [1.1.147]
 
 ### Fixed
 - Automatically rescan on connection failure
 
 ---
 
-## [1.1.146] - 2025-11-30
+## [1.1.146]
 
 ### Fixed
 - Fix status bar error state not being cleared
 
 ---
 
-## [1.1.144] - 2025-11-30
+## [1.1.144]
 
 ### Changed
 - Rename "User ID" to "Internal Tier ID"
 
 ---
 
-## [1.1.143] - 2025-11-29
+## [1.1.143]
 
 ### Added
 - Localize detailed profile fields
 
 ---
 
-## [1.1.142] - 2025-11-29
+## [1.1.142]
 
 ### Improved
 - Move context window logic into a fixed area
 
 ---
 
-## [1.1.14] - 2025-11-28
+## [1.1.14]
 
 ### Added
 - Full profile details
@@ -537,7 +545,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.1.13] - 2025-11-27
+## [1.1.13]
 
 ### Improved
 - Improve UI interactions
@@ -545,7 +553,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.1.12] - 2025-11-27
+## [1.1.12]
 
 ### Improved
 - Enhance debug logs
@@ -553,14 +561,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.1.11] - 2025-11-26
+## [1.1.11]
 
 ### Fixed
 - Floor the percentage to avoid misleading 100%
 
 ---
 
-## [1.0.0] - 2025-11-25
+## [1.0.0]
 
 ### Added
 - Initial release 🎉
