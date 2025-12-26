@@ -88,10 +88,22 @@ export class ReactorCore {
                     });
                     // logger.debug('Signal Body:', body); // 取消注释以查看完整响应
 
+                    // Check for empty body (often happens during process startup)
+                    if (!body || body.trim().length === 0) {
+                        logger.warn('Received empty response from API');
+                        reject(new Error('Signal Corrupted: Empty response from server'));
+                        return;
+                    }
+
                     try {
                         resolve(JSON.parse(body) as T);
                     } catch (e) {
                         const error = e instanceof Error ? e : new Error(String(e));
+                        
+                        // Log body preview for diagnosis
+                        const bodyPreview = body.length > 200 ? body.substring(0, 200) + '...' : body;
+                        logger.error(`JSON parse failed. Response preview: ${bodyPreview}`);
+                        
                         reject(new Error(`Signal Corrupted: ${error.message}`));
                     }
                 });

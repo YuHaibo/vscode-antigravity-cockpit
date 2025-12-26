@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.35]
+
+- Fix: Resolved 'Unexpected end of JSON input' startup error with auto-recovery logic
+- Improved: Enhanced diagnostic logging for API response errors
+
 ## [1.5.34]
 
 ### Improved

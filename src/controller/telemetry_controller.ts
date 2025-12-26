@@ -97,9 +97,11 @@ export class TelemetryController {
         this.reactor.onMalfunction(async (err: Error) => {
             logger.error(`Reactor Malfunction: ${err.message}`);
 
-            // 如果是连接被拒绝（ECONNREFUSED），说明端口可能变了，直接重新扫描
-            if (err.message.includes('ECONNREFUSED') || err.message.includes('Signal Lost')) {
-                logger.warn('Connection lost, initiating immediate re-scan protocol...');
+            // 如果是连接被拒绝（ECONNREFUSED），说明端口可能变了，或者信号中断/损坏，直接重新扫描
+            if (err.message.includes('ECONNREFUSED') || 
+                err.message.includes('Signal Lost') || 
+                err.message.includes('Signal Corrupted')) {
+                logger.warn('Connection issue detected, initiating immediate re-scan protocol...');
                 // 立即尝试重新启动系统（重新扫描端口）
                 await this.onRetry();
                 return;
