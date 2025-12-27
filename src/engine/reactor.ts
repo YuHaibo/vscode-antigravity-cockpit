@@ -37,6 +37,8 @@ export class ReactorCore {
     private lastSnapshot?: QuotaSnapshot;
     /** 上一次的原始 API 响应缓存（用于 reprocess 时重新生成分组） */
     private lastRawResponse?: ServerUserStatusResponse;
+    /** 是否已经成功获取过配额数据（用于决定是否上报后续错误） */
+    private hasSuccessfulSync: boolean = false;
 
     constructor() {
         logger.debug('ReactorCore Online');
@@ -225,16 +227,20 @@ export class ReactorCore {
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             logger.error(`Telemetry Sync Failed: ${err.message}`);
-            captureError(err, {
-                phase: 'telemetrySync',
-                endpoint: API_ENDPOINTS.GET_USER_STATUS,
-                host: '127.0.0.1',
-                port: this.port,
-                timeout_ms: TIMING.HTTP_TIMEOUT_MS,
-                interval_ms: this.currentInterval,
-                has_token: Boolean(this.token),
-                scan: this.lastScanDiagnostics,
-            });
+            
+            // 只有在从未成功获取过配额时才上报，成功后的定时同步失败不上报
+            if (!this.hasSuccessfulSync) {
+                captureError(err, {
+                    phase: 'telemetrySync',
+                    endpoint: API_ENDPOINTS.GET_USER_STATUS,
+                    host: '127.0.0.1',
+                    port: this.port,
+                    timeout_ms: TIMING.HTTP_TIMEOUT_MS,
+                    interval_ms: this.currentInterval,
+                    has_token: Boolean(this.token),
+                    scan: this.lastScanDiagnostics,
+                });
+            }
             if (this.errorHandler) {
                 this.errorHandler(err);
             }
@@ -268,6 +274,9 @@ export class ReactorCore {
         }).join('\n');
         
         logger.info(`Quota Update:\n${quotaSummary}`);
+
+        // 标记已成功获取过配额数据，后续定时同步失败不再上报
+        this.hasSuccessfulSync = true;
 
         if (this.updateHandler) {
             this.updateHandler(telemetry);

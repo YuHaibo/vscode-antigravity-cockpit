@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.39]
+
+### Improved
+- **Error Reporting**: Only report errors that occur during initial startup; subsequent sync failures after successful data fetch are silently ignored
+- **Server Error Display**: Backend error messages are now transparently shown to users with "Antigravity Error:" prefix instead of generic "Invalid server response"
+
 ## [1.5.38]
 
 ### Improved
