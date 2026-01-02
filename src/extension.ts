@@ -18,6 +18,8 @@ import { StatusBarController } from './controller/status_bar_controller';
 import { CommandController } from './controller/command_controller';
 import { MessageController } from './controller/message_controller';
 import { TelemetryController } from './controller/telemetry_controller';
+import { autoTriggerController } from './auto_trigger/controller';
+import { announcementService } from './announcement';
 
 // 全局模块实例
 let hunter: ProcessHunter;
@@ -57,7 +59,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 初始化核心模块
     hunter = new ProcessHunter();
     reactor = new ReactorCore();
-    hud = new CockpitHUD(context.extensionUri);
+    hud = new CockpitHUD(context.extensionUri, context);
     quickPickView = new QuickPickView();
 
     // 设置 QuickPick 刷新回调
@@ -76,8 +78,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // 初始化其他控制器
     _telemetryController = new TelemetryController(reactor, statusBar, hud, quickPickView, onRetry);
-    _messageController = new MessageController(hud, reactor, onRetry);
+    _messageController = new MessageController(context, hud, reactor, onRetry);
     _commandController = new CommandController(context, hud, quickPickView, reactor, onRetry);
+
+    // 初始化自动触发控制器
+    autoTriggerController.initialize(context);
+
+    // 初始化公告服务
+    announcementService.initialize(context);
 
     // 监听配置变化
     context.subscriptions.push(

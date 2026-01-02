@@ -6,20 +6,35 @@ import { configService } from '../shared/config_service';
 import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';
 import { WebviewMessage } from '../shared/types';
+import { autoTriggerController } from '../auto_trigger/controller';
+import { announcementService } from '../announcement';
 
 export class MessageController {
     // 跟踪已通知的模型以避免重复弹窗 (虽然主要逻辑在 TelemetryController，但 CheckAndNotify 可能被消息触发吗? 不, 主要是 handleMessage)
     // 这里主要是处理前端发来的指令
+    private context: vscode.ExtensionContext;
 
     constructor(
+        context: vscode.ExtensionContext,
         private hud: CockpitHUD,
         private reactor: ReactorCore,
         private onRetry: () => Promise<void>,
     ) {
+        this.context = context;
         this.setupMessageHandling();
     }
 
     private setupMessageHandling(): void {
+        // 设置 autoTriggerController 的消息处理器，使其能够推送状态更新到 webview
+        autoTriggerController.setMessageHandler((message) => {
+            if (message.type === 'auto_trigger_state_update') {
+                this.hud.sendMessage({
+                    type: 'autoTriggerState',
+                    data: message.data,
+                });
+            }
+        });
+        
         this.hud.onSignal(async (message: WebviewMessage) => {
             switch (message.command) {
                 case 'togglePin':
@@ -73,6 +88,14 @@ export class MessageController {
                     } else {
                         logger.info('Dashboard initialized (no cache, performing full sync)');
                         this.reactor.syncTelemetry();
+                    }
+                    // 发送公告状态
+                    {
+                        const annState = await announcementService.getState();
+                        this.hud.sendMessage({
+                            type: 'announcementState',
+                            data: annState,
+                        });
                     }
                     break;
 
@@ -315,6 +338,179 @@ export class MessageController {
                     }
                     break;
                 }
+
+                // ============ Auto Trigger ============
+                case 'tabChanged':
+                    // Tab 切换时，如果切到自动触发 Tab，发送状态更新
+                    if (message.tab === 'auto-trigger') {
+                        logger.debug('Switched to Auto Trigger tab');
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                    }
+                    break;
+
+                case 'autoTrigger.authorize':
+                    logger.info('User triggered OAuth authorization');
+                    try {
+                        await autoTriggerController.authorize();
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                    } catch (error) {
+                        const err = error instanceof Error ? error : new Error(String(error));
+                        logger.error(`Authorization failed: ${err.message}`);
+                        vscode.window.showErrorMessage(`Authorization failed: ${err.message}`);
+                    }
+                    break;
+
+                case 'autoTrigger.revoke':
+                    logger.info('User revoked OAuth authorization');
+                    await autoTriggerController.revokeAuthorization();
+                    {
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                    }
+                    break;
+
+                case 'autoTrigger.saveSchedule':
+                    if (message.schedule) {
+                        logger.info('User saved auto trigger schedule');
+                        await autoTriggerController.saveSchedule(message.schedule);
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                        vscode.window.showInformationMessage(t('autoTrigger.saved'));
+                    }
+                    break;
+
+                case 'autoTrigger.test':
+                    logger.info('User triggered manual test');
+                    try {
+                        // 从消息中获取自定义模型列表
+                        const rawModels = (message as { models?: unknown }).models;
+                        const testModels = Array.isArray(rawModels)
+                            ? rawModels.filter((model): model is string => typeof model === 'string' && model.length > 0)
+                            : undefined;
+                        const result = await autoTriggerController.triggerNow(testModels);
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                        if (result.success) {
+                            // 显示成功消息和 AI 回复
+                            const successMsg = t('autoTrigger.triggerSuccess').replace('{duration}', String(result.duration));
+                            const responsePreview = result.response 
+                                ? `\n${result.response.substring(0, 200)}${result.response.length > 200 ? '...' : ''}`
+                                : '';
+                            vscode.window.showInformationMessage(successMsg + responsePreview);
+                        } else {
+                            vscode.window.showErrorMessage(
+                                t('autoTrigger.triggerFailed').replace('{message}', result.error || 'Unknown error'),
+                            );
+                        }
+                    } catch (error) {
+                        const err = error instanceof Error ? error : new Error(String(error));
+                        vscode.window.showErrorMessage(
+                            t('autoTrigger.triggerFailed').replace('{message}', err.message),
+                        );
+                    }
+                    break;
+
+                case 'autoTrigger.validateCrontab':
+                    if (message.crontab) {
+                        const result = autoTriggerController.validateCrontab(message.crontab);
+                        this.hud.sendMessage({
+                            type: 'crontabValidation',
+                            data: result,
+                        });
+                    }
+                    break;
+
+                case 'autoTrigger.clearHistory':
+                    logger.info('User cleared trigger history');
+                    await autoTriggerController.clearHistory();
+                    const state = await autoTriggerController.getState();
+                    this.hud.sendMessage({
+                        type: 'autoTriggerState',
+                        data: state,
+                    });
+                    vscode.window.showInformationMessage(t('autoTrigger.historyCleared'));
+                    break;
+
+                case 'autoTrigger.getState':
+                    {
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                    }
+                    break;
+
+
+                // ============ Announcements ============
+                case 'announcement.getState':
+                    {
+                        const state = await announcementService.getState();
+                        this.hud.sendMessage({
+                            type: 'announcementState',
+                            data: state,
+                        });
+                    }
+                    break;
+
+                case 'announcement.markAsRead':
+                    if (message.id) {
+                        await announcementService.markAsRead(message.id);
+                        logger.debug(`Marked announcement as read: ${message.id}`);
+                        // 更新前端状态
+                        const state = await announcementService.getState();
+                        this.hud.sendMessage({
+                            type: 'announcementState',
+                            data: state,
+                        });
+                    }
+                    break;
+
+                case 'announcement.markAllAsRead':
+                    await announcementService.markAllAsRead();
+                    logger.debug('Marked all announcements as read');
+                    {
+                        const state = await announcementService.getState();
+                        this.hud.sendMessage({
+                            type: 'announcementState',
+                            data: state,
+                        });
+                    }
+                    break;
+
+                case 'openUrl':
+                    if (message.url) {
+                        vscode.env.openExternal(vscode.Uri.parse(message.url));
+                    }
+                    break;
+
+                case 'executeCommand':
+                    if (message.commandId) {
+                        const args = message.commandArgs;
+                        if (args && Array.isArray(args) && args.length > 0) {
+                            await vscode.commands.executeCommand(message.commandId, ...args);
+                        } else {
+                            await vscode.commands.executeCommand(message.commandId);
+                        }
+                    }
+                    break;
 
             }
         });

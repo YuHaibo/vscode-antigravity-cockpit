@@ -6,8 +6,8 @@
 (function() {
     'use strict';
 
-    // 获取 VS Code API
-    const vscode = acquireVsCodeApi();
+    // 获取 VS Code API（保存到全局供其他模块复用）
+    const vscode = window.__vscodeApi || (window.__vscodeApi = acquireVsCodeApi());
 
     // DOM 元素
     const dashboard = document.getElementById('dashboard');
@@ -45,6 +45,8 @@
         allModels: [],    // 所有模型数据（从 snapshot 获取）
         groupMappings: {} // 原始分组映射（用于保存）
     };
+
+
 
     // ============ 初始化 ============
 
@@ -144,6 +146,27 @@
             addGroupBtn.addEventListener('click', handleAddGroup);
         }
 
+
+
+        // Announcement Events
+        const announcementBtn = document.getElementById('announcement-btn');
+        if (announcementBtn) announcementBtn.addEventListener('click', openAnnouncementList);
+        
+        const announcementListClose = document.getElementById('announcement-list-close');
+        if (announcementListClose) announcementListClose.addEventListener('click', closeAnnouncementList);
+        
+        const announcementMarkAllRead = document.getElementById('announcement-mark-all-read');
+        if (announcementMarkAllRead) announcementMarkAllRead.addEventListener('click', markAllAnnouncementsRead);
+        
+        const announcementPopupLater = document.getElementById('announcement-popup-later');
+        if (announcementPopupLater) announcementPopupLater.addEventListener('click', closeAnnouncementPopup);
+        
+        const announcementPopupGotIt = document.getElementById('announcement-popup-got-it');
+        if (announcementPopupGotIt) announcementPopupGotIt.addEventListener('click', handleAnnouncementGotIt);
+        
+        const announcementPopupAction = document.getElementById('announcement-popup-action');
+        if (announcementPopupAction) announcementPopupAction.addEventListener('click', handleAnnouncementAction);
+
         // 事件委托：处理置顶开关
         dashboard.addEventListener('change', (e) => {
             if (e.target.classList.contains('pin-toggle')) {
@@ -157,8 +180,40 @@
         // 监听消息
         window.addEventListener('message', handleMessage);
 
+        // Tab 导航切换
+        initTabNavigation();
+
         // 通知扩展已准备就绪
         vscode.postMessage({ command: 'init' });
+    }
+    
+    // ============ Tab 导航 ============
+    
+    function initTabNavigation() {
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetTab = btn.getAttribute('data-tab');
+                
+                // 更新按钮状态
+                tabButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // 更新内容显示
+                tabContents.forEach(content => {
+                    if (content.id === `tab-${targetTab}`) {
+                        content.classList.add('active');
+                    } else {
+                        content.classList.remove('active');
+                    }
+                });
+                
+                // 通知扩展 Tab 切换（可用于状态同步）
+                vscode.postMessage({ command: 'tabChanged', tab: targetTab });
+            });
+        });
     }
     
     // ============ 设置模态框 ============
@@ -488,8 +543,16 @@
         showToast(i18n['grouping.autoGroup'] || 'Auto grouping...', 'info');
     }
 
+
+
     function handleMessage(event) {
         const message = event.data;
+        
+        // 处理标签页切换消息
+        if (message.type === 'switchTab' && message.tab) {
+            switchToTab(message.tab);
+            return;
+        }
         
         if (message.type === 'telemetry_update') {
             isRefreshing = false;
@@ -516,11 +579,44 @@
                 if (message.config.dataMasked !== undefined) {
                     isDataMasked = message.config.dataMasked;
                 }
+
+
             }
             
             render(message.data, message.config);
             lastSnapshot = message.data; // Update global snapshot
         }
+        
+        // 处理公告状态更新
+        if (message.type === 'announcementState') {
+            handleAnnouncementState(message.data);
+        }
+    }
+    
+    /**
+     * 切换到指定标签页
+     * @param {string} tabId 标签页 ID (如 'auto-trigger')
+     */
+    function switchToTab(tabId) {
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        // 查找目标按钮
+        const targetBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+        if (!targetBtn) return;
+        
+        // 更新按钮状态
+        tabButtons.forEach(b => b.classList.remove('active'));
+        targetBtn.classList.add('active');
+        
+        // 更新内容显示
+        tabContents.forEach(content => {
+            if (content.id === `tab-${tabId}`) {
+                content.classList.add('active');
+            } else {
+                content.classList.remove('active');
+            }
+        });
     }
 
     // ============ 刷新按钮逻辑 ============
@@ -2088,8 +2184,240 @@
         dashboard.appendChild(card);
     }
 
+    // ============ 公告系统 ============
+
+    // 公告状态
+    let announcementState = {
+        announcements: [],
+        unreadIds: [],
+        popupAnnouncement: null,
+    };
+    let currentPopupAnnouncement = null;
+    let hasAutoPopupChecked = false;
+
+    function updateAnnouncementBadge() {
+        const badge = document.getElementById('announcement-badge');
+        if (badge) {
+            const count = announcementState.unreadIds.length;
+            if (count > 0) {
+                badge.textContent = count > 9 ? '9+' : count;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+    }
+
+    function openAnnouncementList() {
+        vscode.postMessage({ command: 'announcement.getState' });
+        const modal = document.getElementById('announcement-list-modal');
+        if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeAnnouncementList() {
+        const modal = document.getElementById('announcement-list-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    function renderAnnouncementList() {
+        const container = document.getElementById('announcement-list');
+        if (!container) return;
+
+        const announcements = announcementState.announcements || [];
+        if (announcements.length === 0) {
+            container.innerHTML = `<div class="announcement-empty">${i18n['announcement.empty'] || 'No notifications'}</div>`;
+            return;
+        }
+
+        const typeIcons = {
+            feature: '✨',
+            warning: '⚠️',
+            info: 'ℹ️',
+            urgent: '🚨',
+        };
+
+        container.innerHTML = announcements.map(ann => {
+            const isUnread = announcementState.unreadIds.includes(ann.id);
+            const icon = typeIcons[ann.type] || 'ℹ️';
+            const timeAgo = formatTimeAgo(ann.createdAt);
+            
+            return `
+                <div class="announcement-item ${isUnread ? 'unread' : ''}" data-id="${ann.id}">
+                    <span class="announcement-icon">${icon}</span>
+                    <div class="announcement-info">
+                        <div class="announcement-title">
+                            ${isUnread ? '<span class="announcement-unread-dot"></span>' : ''}
+                            <span>${ann.title}</span>
+                        </div>
+                        <div class="announcement-summary">${ann.summary}</div>
+                        <div class="announcement-time">${timeAgo}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // 绑定点击事件
+        container.querySelectorAll('.announcement-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const id = item.dataset.id;
+                const ann = announcements.find(a => a.id === id);
+                if (ann) {
+                    showAnnouncementPopup(ann);
+                    closeAnnouncementList();
+                }
+            });
+        });
+    }
+
+    function formatTimeAgo(dateStr) {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return i18n['announcement.timeAgo.justNow'] || 'Just now';
+        if (diffMins < 60) return (i18n['announcement.timeAgo.minutesAgo'] || '{count}m ago').replace('{count}', diffMins);
+        if (diffHours < 24) return (i18n['announcement.timeAgo.hoursAgo'] || '{count}h ago').replace('{count}', diffHours);
+        return (i18n['announcement.timeAgo.daysAgo'] || '{count}d ago').replace('{count}', diffDays);
+    }
+
+    function showAnnouncementPopup(ann) {
+        currentPopupAnnouncement = ann;
+        
+        const typeLabels = {
+            feature: i18n['announcement.type.feature'] || '✨ New Feature',
+            warning: i18n['announcement.type.warning'] || '⚠️ Warning',
+            info: i18n['announcement.type.info'] || 'ℹ️ Info',
+            urgent: i18n['announcement.type.urgent'] || '🚨 Urgent',
+        };
+
+        const popupType = document.getElementById('announcement-popup-type');
+        const popupTitle = document.getElementById('announcement-popup-title');
+        const popupContent = document.getElementById('announcement-popup-content');
+        const popupAction = document.getElementById('announcement-popup-action');
+        const popupGotIt = document.getElementById('announcement-popup-got-it');
+
+        if (popupType) {
+            popupType.textContent = typeLabels[ann.type] || typeLabels.info;
+            popupType.className = `announcement-type-badge ${ann.type}`;
+        }
+        if (popupTitle) popupTitle.textContent = ann.title;
+        if (popupContent) popupContent.textContent = ann.content;
+
+        // 处理操作按钮
+        if (ann.action && ann.action.label) {
+            if (popupAction) {
+                popupAction.textContent = ann.action.label;
+                popupAction.classList.remove('hidden');
+            }
+            if (popupGotIt) popupGotIt.classList.add('hidden');
+        } else {
+            if (popupAction) popupAction.classList.add('hidden');
+            if (popupGotIt) popupGotIt.classList.remove('hidden');
+        }
+
+        const modal = document.getElementById('announcement-popup-modal');
+        if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeAnnouncementPopup() {
+        const modal = document.getElementById('announcement-popup-modal');
+        const modalContent = modal?.querySelector('.announcement-popup-content');
+        const bellBtn = document.getElementById('announcement-btn');
+        
+        if (modal && modalContent && bellBtn) {
+            // 获取铃铛按钮的位置
+            const bellRect = bellBtn.getBoundingClientRect();
+            const contentRect = modalContent.getBoundingClientRect();
+            
+            // 计算目标位移
+            const targetX = bellRect.left + bellRect.width / 2 - (contentRect.left + contentRect.width / 2);
+            const targetY = bellRect.top + bellRect.height / 2 - (contentRect.top + contentRect.height / 2);
+            
+            // 添加飞向铃铛的动画
+            modalContent.style.transition = 'transform 0.4s ease-in, opacity 0.4s ease-in';
+            modalContent.style.transform = `translate(${targetX}px, ${targetY}px) scale(0.1)`;
+            modalContent.style.opacity = '0';
+            
+            // 铃铛抖动效果
+            bellBtn.classList.add('bell-shake');
+            
+            // 动画结束后隐藏模态框并重置样式
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modalContent.style.transition = '';
+                modalContent.style.transform = '';
+                modalContent.style.opacity = '';
+                bellBtn.classList.remove('bell-shake');
+            }, 400);
+        } else if (modal) {
+            modal.classList.add('hidden');
+        }
+        
+        currentPopupAnnouncement = null;
+    }
+
+    function handleAnnouncementGotIt() {
+        if (currentPopupAnnouncement) {
+            vscode.postMessage({ 
+                command: 'announcement.markAsRead', 
+                id: currentPopupAnnouncement.id 
+            });
+        }
+        closeAnnouncementPopup();
+    }
+
+    function handleAnnouncementAction() {
+        if (currentPopupAnnouncement && currentPopupAnnouncement.action) {
+            const action = currentPopupAnnouncement.action;
+            
+            // 先标记已读
+            vscode.postMessage({ 
+                command: 'announcement.markAsRead', 
+                id: currentPopupAnnouncement.id 
+            });
+
+            // 执行操作
+            if (action.type === 'tab') {
+                switchToTab(action.target);
+            } else if (action.type === 'url') {
+                vscode.postMessage({ command: 'openUrl', url: action.target });
+            } else if (action.type === 'command') {
+                vscode.postMessage({ 
+                    command: 'executeCommand', 
+                    commandId: action.target,
+                    commandArgs: action.arguments || []
+                });
+            }
+        }
+        closeAnnouncementPopup();
+    }
+
+    function markAllAnnouncementsRead() {
+        vscode.postMessage({ command: 'announcement.markAllAsRead' });
+        showToast(i18n['announcement.markAllRead'] || 'All marked as read', 'success');
+    }
+
+    function handleAnnouncementState(state) {
+        announcementState = state;
+        updateAnnouncementBadge();
+        renderAnnouncementList();
+        
+        // 检查是否需要弹出公告
+        if (!hasAutoPopupChecked && state.popupAnnouncement) {
+            hasAutoPopupChecked = true;
+            // 延迟弹出，等待页面渲染完成
+            setTimeout(() => {
+                showAnnouncementPopup(state.popupAnnouncement);
+            }, 600);
+        }
+    }
+
     // ============ 启动 ============
 
     init();
 
 })();
+

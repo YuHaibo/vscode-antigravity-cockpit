@@ -7,6 +7,7 @@ import { configService } from '../shared/config_service';
 import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';
 import { DISPLAY_MODE, FEEDBACK_URL } from '../shared/constants';
+import { announcementService } from '../announcement';
 
 export class CommandController {
     constructor(
@@ -22,12 +23,12 @@ export class CommandController {
     private registerCommands(): void {
         // 打开 Dashboard
         this.context.subscriptions.push(
-            vscode.commands.registerCommand('agCockpit.open', async () => {
+            vscode.commands.registerCommand('agCockpit.open', async (options?: { tab?: string }) => {
                 const config = configService.getConfig();
                 if (config.displayMode === DISPLAY_MODE.QUICKPICK) {
                     this.quickPickView.show();
                 } else {
-                    const success = await this.hud.revealHud();
+                    const success = await this.hud.revealHud(options?.tab);
                     if (!success) {
                         // Webview 创建失败，引导用户切换到 QuickPick 模式
                         const selection = await vscode.window.showWarningMessage(
@@ -127,6 +128,26 @@ export class CommandController {
                     await configService.updateConfig('criticalThreshold', newValue);
                     vscode.window.showInformationMessage(t('threshold.updated', { value: newValue }));
                     this.reactor.reprocess();
+                }
+            }),
+        );
+
+        // 强制刷新公告
+        this.context.subscriptions.push(
+            vscode.commands.registerCommand('agCockpit.refreshAnnouncements', async () => {
+                try {
+                    const state = await announcementService.forceRefresh();
+                    vscode.window.showInformationMessage(
+                        t('announcement.refreshed').replace('{count}', String(state.announcements.length)),
+                    );
+                    // 更新 HUD 中的公告状态
+                    this.hud.sendMessage({
+                        type: 'announcementState',
+                        data: state,
+                    });
+                } catch (error) {
+                    const err = error instanceof Error ? error : new Error(String(error));
+                    vscode.window.showErrorMessage(`Failed to refresh announcements: ${err.message}`);
                 }
             }),
         );

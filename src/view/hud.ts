@@ -22,26 +22,31 @@ export class CockpitHUD {
     private cachedTelemetry?: QuotaSnapshot;
     private messageRouter?: (message: WebviewMessage) => void;
     private readonly extensionUri: vscode.Uri;
+    private readonly context: vscode.ExtensionContext;
 
-    constructor(extensionUri: vscode.Uri) {
+    constructor(extensionUri: vscode.Uri, context: vscode.ExtensionContext) {
         this.extensionUri = extensionUri;
+        this.context = context;
     }
 
     /**
      * 显示 HUD 面板
+     * @param initialTab 可选的初始标签页 (如 'auto-trigger')
      * @returns 是否成功打开
      */
-    public async revealHud(snapshot?: QuotaSnapshot): Promise<boolean> {
-        if (snapshot) {
-            this.cachedTelemetry = snapshot;
-        }
-
+    public async revealHud(initialTab?: string): Promise<boolean> {
         const column = vscode.window.activeTextEditor?.viewColumn;
         const existingPanel = this.panels.get('main');
 
         if (existingPanel) {
             existingPanel.reveal(column);
             this.refreshWithCachedData();
+            // 如果指定了初始标签页，发送消息切换
+            if (initialTab) {
+                setTimeout(() => {
+                    existingPanel.webview.postMessage({ type: 'switchTab', tab: initialTab });
+                }, 100);
+            }
             return true;
         }
 
@@ -73,6 +78,13 @@ export class CockpitHUD {
 
             if (this.cachedTelemetry) {
                 this.refreshWithCachedData();
+            }
+
+            // 如果指定了初始标签页，延迟发送消息切换
+            if (initialTab) {
+                setTimeout(() => {
+                    panel.webview.postMessage({ type: 'switchTab', tab: initialTab });
+                }, 500);
             }
 
             return true;
@@ -128,6 +140,16 @@ export class CockpitHUD {
     }
 
     /**
+     * 向 Webview 发送消息
+     */
+    public sendMessage(message: object): void {
+        const panel = this.panels.get('main');
+        if (panel) {
+            panel.webview.postMessage(message);
+        }
+    }
+
+    /**
      * 刷新视图
      */
     public refreshView(snapshot: QuotaSnapshot, config: DashboardConfig): void {
@@ -137,11 +159,11 @@ export class CockpitHUD {
         if (panel) {
             // 转换数据为 Webview 兼容格式
             const webviewData = this.convertToWebviewFormat(snapshot);
-            
+
             panel.webview.postMessage({
                 type: 'telemetry_update',
                 data: webviewData,
-                config: config,
+                config,
             });
         }
     }
@@ -268,7 +290,9 @@ export class CockpitHUD {
         // 获取外部资源 URI
         const styleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'dashboard.css');
         const listStyleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'list_view.css');
+        const autoTriggerStyleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'auto_trigger.css');
         const scriptUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'dashboard.js');
+        const autoTriggerScriptUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'auto_trigger.js');
 
         // 获取国际化文本
         const translations = i18n.getAllTranslations();
@@ -286,6 +310,7 @@ export class CockpitHUD {
     <title>${t('dashboard.title')}</title>
     <link rel="stylesheet" href="${styleUri}">
     <link rel="stylesheet" href="${listStyleUri}">
+    <link rel="stylesheet" href="${autoTriggerStyleUri}">
 </head>
 <body>
     <header class="header">
@@ -306,19 +331,267 @@ export class CockpitHUD {
             <button id="toggle-profile-btn" class="refresh-btn" title="${t('profile.togglePlan')}">
                 ${t('profile.planDetails')}
             </button>
+            <button id="announcement-btn" class="refresh-btn icon-only" title="${t('announcement.title')}">
+                🔔<span id="announcement-badge" class="notification-badge hidden">0</span>
+            </button>
             <button id="settings-btn" class="refresh-btn icon-only" title="${t('threshold.settings')}">
                 ⚙️
             </button>
         </div>
     </header>
 
-    <div id="status" class="status-connecting">
-        <span class="spinner"></span>
-        <span>${t('dashboard.connecting')}</span>
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="quota">📊 ${t('dashboard.title')}</button>
+        <button class="tab-btn" data-tab="auto-trigger">
+            ${t('autoTrigger.tabTitle')} <span id="at-tab-status-dot" class="status-dot hidden">●</span>
+        </button>
+    </nav>
+
+    <!-- Quota Tab Content -->
+    <div id="tab-quota" class="tab-content active">
+        <div id="status" class="status-connecting">
+            <span class="spinner"></span>
+            <span>${t('dashboard.connecting')}</span>
+        </div>
+
+        <div id="dashboard">
+            <!-- Injected via JS -->
+        </div>
     </div>
 
-    <div id="dashboard">
-        <!-- Injected via JS -->
+    <!-- Auto Trigger Tab Content -->
+    <div id="tab-auto-trigger" class="tab-content">
+        <div class="auto-trigger-compact">
+            <!-- Description Card -->
+            <div class="at-description-card">
+                <div class="at-desc-title">${t('autoTrigger.descriptionTitle')}</div>
+                <div class="at-desc-content">${t('autoTrigger.description')}</div>
+            </div>
+
+            <!-- Status Overview Card -->
+            <div class="at-status-card" id="at-status-card">
+                <!-- Auth Row -->
+                <div class="at-row at-auth-row" id="at-auth-row">
+                    <div class="at-auth-info">
+                        <span class="at-auth-icon">⚠️</span>
+                        <span class="at-auth-text">${t('autoTrigger.unauthorized')}</span>
+                    </div>
+                    <div class="at-auth-actions">
+                        <button id="at-auth-btn" class="at-btn at-btn-primary">${t('autoTrigger.authorizeBtn')}</button>
+                    </div>
+                </div>
+
+                <!-- Status Grid (hidden when unauthorized) -->
+                <div class="at-status-grid" id="at-status-grid">
+                    <div class="at-status-item">
+                        <span class="at-label">⏰ ${t('autoTrigger.statusLabel') || '状态'}</span>
+                        <span class="at-value" id="at-status-value">${t('autoTrigger.disabled') || '未启用'}</span>
+                    </div>
+                    <div class="at-status-item">
+                        <span class="at-label">📅 ${t('autoTrigger.modeLabel') || '模式'}</span>
+                        <span class="at-value" id="at-mode-value">--</span>
+                    </div>
+                    <div class="at-status-item">
+                        <span class="at-label">🤖 ${t('autoTrigger.modelsLabel') || '模型'}</span>
+                        <span class="at-value" id="at-models-value">--</span>
+                    </div>
+                    <div class="at-status-item">
+                        <span class="at-label">⏭️ ${t('autoTrigger.nextTrigger')}</span>
+                        <span class="at-value" id="at-next-value">--</span>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="at-actions" id="at-actions">
+                    <button id="at-config-btn" class="at-btn at-btn-secondary">
+                        ⚙️ ${t('autoTrigger.configBtn') || '配置调度'}
+                    </button>
+                    <button id="at-test-btn" class="at-btn at-btn-accent">
+                        ${t('autoTrigger.testBtn')}
+                    </button>
+                    <button id="at-history-btn" class="at-btn at-btn-secondary">
+                        📜 ${t('autoTrigger.historyBtn') || '历史'} <span id="at-history-count">(0)</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config Modal -->
+    <div id="at-config-modal" class="modal hidden">
+        <div class="modal-content modal-content-medium">
+            <div class="modal-header">
+                <h3>${t('autoTrigger.scheduleSection')}</h3>
+                <button id="at-config-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body at-config-body">
+                <!-- Enable Toggle -->
+                <div class="at-config-row">
+                    <label>${t('autoTrigger.enableSchedule')}</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="at-enable-schedule">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Mode Selection -->
+                <div class="at-config-section">
+                    <label>${t('autoTrigger.repeatMode')}</label>
+                    <select id="at-mode-select" class="at-select">
+                        <option value="daily">${t('autoTrigger.daily')}</option>
+                        <option value="weekly">${t('autoTrigger.weekly')}</option>
+                        <option value="interval">${t('autoTrigger.interval')}</option>
+                    </select>
+                </div>
+
+                <!-- Daily Config -->
+                <div id="at-config-daily" class="at-mode-config">
+                    <label>${t('autoTrigger.selectTime')}</label>
+                    <div class="at-time-grid" id="at-daily-times">
+                        <div class="at-chip" data-time="06:00">06:00</div>
+                        <div class="at-chip" data-time="07:00">07:00</div>
+                        <div class="at-chip selected" data-time="08:00">08:00</div>
+                        <div class="at-chip" data-time="09:00">09:00</div>
+                        <div class="at-chip" data-time="10:00">10:00</div>
+                        <div class="at-chip" data-time="11:00">11:00</div>
+                        <div class="at-chip" data-time="12:00">12:00</div>
+                        <div class="at-chip" data-time="14:00">14:00</div>
+                        <div class="at-chip" data-time="16:00">16:00</div>
+                        <div class="at-chip" data-time="18:00">18:00</div>
+                        <div class="at-chip" data-time="20:00">20:00</div>
+                        <div class="at-chip" data-time="22:00">22:00</div>
+                    </div>
+                </div>
+
+                <!-- Weekly Config -->
+                <div id="at-config-weekly" class="at-mode-config hidden">
+                    <label>${t('autoTrigger.selectDay')}</label>
+                    <div class="at-day-grid" id="at-weekly-days">
+                        <div class="at-chip selected" data-day="1">一</div>
+                        <div class="at-chip selected" data-day="2">二</div>
+                        <div class="at-chip selected" data-day="3">三</div>
+                        <div class="at-chip selected" data-day="4">四</div>
+                        <div class="at-chip selected" data-day="5">五</div>
+                        <div class="at-chip" data-day="6">六</div>
+                        <div class="at-chip" data-day="0">日</div>
+                    </div>
+                    <div class="at-quick-btns">
+                        <button class="at-quick-btn" data-preset="workdays">${t('autoTrigger.workdays')}</button>
+                        <button class="at-quick-btn" data-preset="weekend">${t('autoTrigger.weekend')}</button>
+                        <button class="at-quick-btn" data-preset="all">${t('autoTrigger.allDays')}</button>
+                    </div>
+                    <label>${t('autoTrigger.selectTime')}</label>
+                    <div class="at-time-grid" id="at-weekly-times">
+                        <div class="at-chip" data-time="07:00">07:00</div>
+                        <div class="at-chip selected" data-time="08:00">08:00</div>
+                        <div class="at-chip" data-time="12:00">12:00</div>
+                        <div class="at-chip" data-time="18:00">18:00</div>
+                    </div>
+                </div>
+
+                <!-- Interval Config -->
+                <div id="at-config-interval" class="at-mode-config hidden">
+                    <div class="at-interval-row">
+                        <label>${t('autoTrigger.intervalLabel')}</label>
+                        <input type="number" id="at-interval-hours" min="1" max="12" value="4" class="at-input-small">
+                        <span>${t('autoTrigger.hours')}</span>
+                    </div>
+                    <div class="at-interval-row">
+                        <label>${t('autoTrigger.from')}</label>
+                        <input type="time" id="at-interval-start" value="07:00" class="at-input-time">
+                        <label>${t('autoTrigger.to')}</label>
+                        <input type="time" id="at-interval-end" value="22:00" class="at-input-time">
+                    </div>
+                </div>
+
+                <!-- Model Selection -->
+                <div class="at-config-section">
+                    <label>${t('autoTrigger.modelSection')}</label>
+                    <p class="at-hint">${t('autoTrigger.modelsHint')}</p>
+                    <div id="at-config-models" class="at-model-list">
+                        <div class="at-loading">${t('dashboard.connecting')}</div>
+                    </div>
+                </div>
+
+                <!-- Crontab (Collapsed) -->
+                <details class="at-advanced">
+                    <summary>${t('autoTrigger.advanced')}</summary>
+                    <div class="at-crontab-row">
+                        <input type="text" id="at-crontab-input" placeholder="${t('autoTrigger.crontabPlaceholder')}" class="at-input">
+                        <button id="at-crontab-validate" class="at-btn at-btn-small">${t('autoTrigger.validate')}</button>
+                    </div>
+                    <div id="at-crontab-result" class="at-crontab-result"></div>
+                </details>
+
+                <!-- Preview -->
+                <div class="at-preview">
+                    <label>${t('autoTrigger.preview')}</label>
+                    <ul id="at-next-runs" class="at-preview-list">
+                        <li>${t('autoTrigger.selectTimeHint')}</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="at-config-cancel" class="btn-secondary">${t('customGrouping.cancel') || '取消'}</button>
+                <button id="at-config-save" class="btn-primary">💾 ${t('autoTrigger.saveBtn')}</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Modal -->
+    <div id="at-test-modal" class="modal hidden">
+        <div class="modal-content modal-content-small">
+            <div class="modal-header">
+                <h3>${t('autoTrigger.testBtn')}</h3>
+                <button id="at-test-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body at-test-body">
+                <label>${t('autoTrigger.selectModels')}</label>
+                <div id="at-test-models" class="at-model-list">
+                    <div class="at-loading">${t('dashboard.connecting')}</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="at-test-cancel" class="btn-secondary">${t('customGrouping.cancel') || '取消'}</button>
+                <button id="at-test-run" class="btn-primary">🚀 ${t('autoTrigger.triggerBtn') || '触发'}</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="at-history-modal" class="modal hidden">
+        <div class="modal-content modal-content-medium">
+            <div class="modal-header">
+                <h3>${t('autoTrigger.historySection')}</h3>
+                <button id="at-history-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body at-history-body">
+                <div id="at-history-list" class="at-history-list">
+                    <div class="at-no-data">${t('autoTrigger.noHistory')}</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="at-history-clear" class="btn-secondary" style="color: var(--vscode-errorForeground);">🗑️ ${t('autoTrigger.clearHistory')}</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Revoke Confirm Modal -->
+    <div id="at-revoke-modal" class="modal hidden">
+        <div class="modal-content modal-content-small">
+            <div class="modal-header">
+                <h3>⚠️ ${t('autoTrigger.revokeConfirmTitle') || '确认取消授权'}</h3>
+                <button id="at-revoke-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body" style="text-align: center; padding: 20px;">
+                <p style="margin-bottom: 20px;">${t('autoTrigger.revokeConfirm')}</p>
+            </div>
+            <div class="modal-footer">
+                <button id="at-revoke-cancel" class="btn-secondary">${t('customGrouping.cancel') || '取消'}</button>
+                <button id="at-revoke-confirm" class="btn-primary" style="background: var(--vscode-errorForeground);">🗑️ ${t('autoTrigger.confirmRevoke') || '确认取消'}</button>
+            </div>
+        </div>
     </div>
 
     <div id="settings-modal" class="modal hidden">
@@ -458,6 +731,42 @@ export class CockpitHUD {
         </div>
     </div>
 
+    <!-- Announcement List Modal -->
+    <div id="announcement-list-modal" class="modal hidden">
+        <div class="modal-content modal-content-medium">
+            <div class="modal-header">
+                <h3>🔔 ${t('announcement.title')}</h3>
+                <button id="announcement-list-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body announcement-list-body">
+                <div class="announcement-toolbar">
+                    <button id="announcement-mark-all-read" class="btn-secondary btn-small">${t('announcement.markAllRead')}</button>
+                </div>
+                <div id="announcement-list" class="announcement-list">
+                    <div class="announcement-empty">${t('announcement.empty')}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Announcement Popup Modal -->
+    <div id="announcement-popup-modal" class="modal hidden">
+        <div class="modal-content modal-content-medium announcement-popup-content">
+            <div class="modal-header">
+                <span id="announcement-popup-type" class="announcement-type-badge"></span>
+                <h3 id="announcement-popup-title"></h3>
+            </div>
+            <div class="modal-body announcement-popup-body">
+                <div id="announcement-popup-content" class="announcement-content"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="announcement-popup-later" class="btn-secondary">${t('announcement.later')}</button>
+                <button id="announcement-popup-action" class="btn-primary hidden"></button>
+                <button id="announcement-popup-got-it" class="btn-primary">${t('announcement.gotIt')}</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast" class="toast hidden"></div>
 
     <footer class="dashboard-footer">
@@ -470,6 +779,9 @@ export class CockpitHUD {
                 <a href="https://github.com/jlcodes99/vscode-antigravity-cockpit/issues" target="_blank" class="footer-link feedback-link">
                     💬 ${i18n.t('footer.feedback')}
                 </a>
+                <a href="https://github.com/jlcodes99/vscode-antigravity-cockpit/blob/master/docs/DONATE.md" target="_blank" class="footer-link donate-link">
+                    ☕ ${i18n.t('footer.donate') || 'Donate'}
+                </a>
             </div>
         </div>
     </footer>
@@ -477,8 +789,10 @@ export class CockpitHUD {
     <script nonce="${nonce}">
         // 注入国际化文本
         window.__i18n = ${translationsJson};
+        window.__autoTriggerI18n = ${translationsJson};
     </script>
     <script nonce="${nonce}" src="${scriptUri}"></script>
+    <script nonce="${nonce}" src="${autoTriggerScriptUri}"></script>
 </body>
 </html>`;
     }

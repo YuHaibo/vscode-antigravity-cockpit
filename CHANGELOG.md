@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.0]
+
+### Added
+- **Auto Wake-up**: New feature to schedule automated requests to AI models
+  - Set up timed wake-up calls to trigger quota reset cycles in advance
+  - Supports daily, weekly, interval-based, and advanced Crontab scheduling
+  - Multi-model selection: choose which models to trigger
+  - Trigger history with request/response details (persisted for 7 days, up to 40 records)
+  - Next trigger time displayed in the main quota tooltip
+  - Secure credential storage using VS Code's built-in Secret Storage API
+  - Google OAuth authentication for API access
+- **Announcement System**: New remote notification system
+  - Dynamic delivery of new features, important notices, and update notes
+  - Supports popup alerts, mark-as-read, and notification history
+
 ## [1.5.48]
 
 ### Fixed

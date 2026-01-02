@@ -19,6 +19,7 @@ import { t } from '../shared/i18n';
 import { TIMING, API_ENDPOINTS } from '../shared/constants';
 import { captureError } from '../shared/error_reporter';
 import { AntigravityError, isServerError } from '../shared/errors';
+import { autoTriggerController } from '../auto_trigger/controller';
 
 
 
@@ -649,6 +650,10 @@ export class ReactorCore {
             
             logger.debug(`Grouping enabled: ${groups.length} groups created (saved mappings: ${hasSavedMappings})`);
         }
+
+        // 将配额中的模型常量传递给 AutoTriggerController，用于过滤可触发模型
+        const quotaModelConstants = models.map(m => m.modelId);
+        autoTriggerController.setQuotaModels(quotaModelConstants);
 
         return {
             timestamp: new Date(),

@@ -47,19 +47,33 @@ async function build() {
         format: 'iife',
     });
 
+    // 2b. Bundle Auto Trigger Webview JS
+    const autoTriggerContext = await esbuild.context({
+        entryPoints: ['./src/view/webview/auto_trigger.js'],
+        bundle: true,
+        outfile: './out/view/webview/auto_trigger.js',
+        minify: isProduction,
+        sourcemap: !isProduction,
+        target: 'es2020',
+        format: 'iife',
+    });
+
     if (isWatch) {
         await Promise.all([
             extensionContext.watch(),
-            webviewContext.watch()
+            webviewContext.watch(),
+            autoTriggerContext.watch()
         ]);
         console.log('Watching for changes...');
     } else {
         await Promise.all([
             extensionContext.rebuild(),
-            webviewContext.rebuild()
+            webviewContext.rebuild(),
+            autoTriggerContext.rebuild()
         ]);
         await extensionContext.dispose();
         await webviewContext.dispose();
+        await autoTriggerContext.dispose();
         console.log('Build finished successfully.');
     }
 
@@ -70,6 +84,7 @@ async function build() {
     }
     fs.copyFileSync('./src/view/webview/dashboard.css', './out/view/webview/dashboard.css');
     fs.copyFileSync('./src/view/webview/list_view.css', './out/view/webview/list_view.css');
+    fs.copyFileSync('./src/view/webview/auto_trigger.css', './out/view/webview/auto_trigger.css');
 }
 
 build().catch(err => {

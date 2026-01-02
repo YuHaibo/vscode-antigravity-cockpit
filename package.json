@@ -3,7 +3,7 @@
   "displayName": "Antigravity Cockpit",
   "icon": "assets/icon.png",
   "description": "A premium, dashboard-style quota monitor for Antigravity AI.",
-  "version": "1.5.48",
+  "version": "1.6.0",
   "publisher": "jlcodes",
   "engines": {
     "vscode": "^1.90.0"
@@ -68,6 +68,12 @@
         "command": "agCockpit.setCriticalThreshold",
         "title": "Set Critical Threshold",
         "category": "Antigravity"
+      },
+      {
+        "command": "agCockpit.refreshAnnouncements",
+        "title": "Refresh Announcements",
+        "category": "Antigravity",
+        "icon": "$(bell)"
       }
     ],
     "keybindings": [

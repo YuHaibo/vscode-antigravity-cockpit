@@ -4,6 +4,7 @@ import { CockpitConfig } from '../shared/config_service';
 import { t } from '../shared/i18n';
 import { QuotaSnapshot } from '../shared/types';
 import { STATUS_BAR_FORMAT, QUOTA_THRESHOLDS } from '../shared/constants';
+import { autoTriggerController } from '../auto_trigger/controller';
 
 export class StatusBarController {
     private statusBarItem: vscode.StatusBarItem;
@@ -229,6 +230,12 @@ export class StatusBarController {
             // 使用完整模型名称
             const pctDisplay = (Math.floor(pct * 100) / 100).toFixed(2);
             md.appendMarkdown(`| ${icon} **${model.label}** | \`${bar}\` | ${pctDisplay}% → ${resetTime} |\n`);
+        }
+
+        // 自动唤醒下次触发时间
+        const nextTriggerTime = autoTriggerController.getNextRunTimeFormatted();
+        if (nextTriggerTime) {
+            md.appendMarkdown(`\n---\n⏰ **${t('autoTrigger.nextTrigger')}**: ${nextTriggerTime}\n`);
         }
 
         // 底部提示

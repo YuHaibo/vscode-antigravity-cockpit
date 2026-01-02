@@ -326,7 +326,26 @@ export type WebviewMessageType =
     | 'updateDataMasked'
     | 'openCustomGrouping'
     | 'saveCustomGrouping'
-    | 'previewAutoGroup';
+    | 'previewAutoGroup'
+    // Auto Trigger
+    | 'tabChanged'
+    | 'autoTrigger.authorize'
+    | 'autoTrigger.revoke'
+    | 'autoTrigger.saveSchedule'
+    | 'autoTrigger.test'
+    | 'autoTrigger.validateCrontab'
+    | 'autoTrigger.getState'
+    | 'autoTrigger.clearHistory'
+    // Feature Guide
+    | 'guide.checkItOut'
+    | 'guide.dontShowAgain'
+    // Announcements
+    | 'announcement.getState'
+    | 'announcement.markAsRead'
+    | 'announcement.markAllAsRead'
+    // General
+    | 'openUrl'
+    | 'executeCommand';
 
 /** Webview 消息 */
 export interface WebviewMessage {
@@ -359,6 +378,38 @@ export interface WebviewMessage {
     customGroupMappings?: Record<string, string>;
     /** 自定义分组名称 (saveCustomGrouping) */
     customGroupNames?: Record<string, string>;
+    // Auto Trigger
+    /** Tab 名称 (tabChanged) */
+    tab?: string;
+    /** 调度配置 (autoTrigger.saveSchedule) */
+    schedule?: ScheduleConfig;
+    /** Crontab 表达式 (autoTrigger.validateCrontab) */
+    crontab?: string;
+    /** 手动测试模型列表 (autoTrigger.test) */
+    models?: string[];
+    // Announcements
+    /** 公告 ID (announcement.markAsRead) */
+    id?: string;
+    /** URL (openUrl) */
+    url?: string;
+    /** 命令 ID (executeCommand) */
+    commandId?: string;
+    /** 命令参数 (executeCommand) */
+    commandArgs?: unknown[];
+}
+
+/** 调度配置 */
+export interface ScheduleConfig {
+    enabled: boolean;
+    repeatMode: 'daily' | 'weekly' | 'interval';
+    dailyTimes?: string[];
+    weeklyDays?: number[];
+    weeklyTimes?: string[];
+    intervalHours?: number;
+    intervalStartTime?: string;
+    intervalEndTime?: string;
+    crontab?: string;
+    selectedModels: string[];
 }
 
 /** Dashboard 配置 */
@@ -401,6 +452,8 @@ export interface DashboardConfig {
     displayMode?: string;
     /** 是否遮罩敏感数据 */
     dataMasked?: boolean;
+    /** External URL */
+    url?: string;
     /** 分组映射 (modelId -> groupId) */
     groupMappings?: Record<string, string>;
 }
