@@ -230,7 +230,7 @@ export const ja = {
     // Footer
     'footer.enjoyingThis': 'お気に入りですか？⭐をお願いします！',
     'footer.feedback': 'フィードバック',
-    'footer.donate': 'コーヒーをおごる',
+    'footer.donate': '寄付',
 
     // Auto Trigger
     'autoTrigger.tabTitle': '⏰ 自動ウェイクアップ',

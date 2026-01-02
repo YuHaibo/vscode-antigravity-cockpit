@@ -230,7 +230,7 @@ export const zhTW = {
     // Footer
     'footer.enjoyingThis': '覺得好用？給個 ⭐ 支持一下！',
     'footer.feedback': '回饋',
-    'footer.donate': '請我喝杯咖啡',
+    'footer.donate': '贊助',
 
     // Auto Trigger
     'autoTrigger.tabTitle': '⏰ 自動喚醒',

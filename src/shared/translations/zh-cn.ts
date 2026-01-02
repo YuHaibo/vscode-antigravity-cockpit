@@ -231,7 +231,7 @@ export const zhCN = {
     // Footer
     'footer.enjoyingThis': '觉得好用？给个 ⭐ 支持一下！',
     'footer.feedback': '反馈',
-    'footer.donate': '请我喝杯咖啡',
+    'footer.donate': '赞助',
 
     // Auto Trigger
     'autoTrigger.tabTitle': '⏰ 自动唤醒',

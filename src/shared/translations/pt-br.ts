@@ -324,5 +324,5 @@ export const ptBR = {
     'announcement.type.urgent': '🚨 Urgente',
     'announcement.refreshed': 'Notificações atualizadas ({count} no total)',
     'footer.star': "⭐ Estrela",
-    'footer.donate': 'Me pague um café',
+    'footer.donate': 'Apoiar',
 };

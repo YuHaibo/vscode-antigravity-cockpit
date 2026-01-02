@@ -324,5 +324,5 @@ export const es = {
     'announcement.type.urgent': '🚨 Urgente',
     'announcement.refreshed': 'Notificaciones actualizadas ({count} en total)',
     'footer.star': "⭐ Star",
-    'footer.donate': 'Invítame un café',
+    'footer.donate': 'Patrocinar',
 };

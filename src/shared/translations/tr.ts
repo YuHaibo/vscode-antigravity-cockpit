@@ -324,5 +324,5 @@ export const tr = {
     'announcement.type.urgent': '🚨 Acil',
     'announcement.refreshed': 'Bildirimler güncellendi (toplam {count})',
     'footer.star': "⭐ Yıldız",
-    'footer.donate': 'Bana bir kahve ısmarla',
+    'footer.donate': 'Destekle',
 };

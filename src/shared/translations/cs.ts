@@ -324,5 +324,5 @@ export const cs = {
     'announcement.type.urgent': '🚨 Urgentní',
     'announcement.refreshed': 'Oznámení aktualizována (celkem {count})',
     'footer.star': "⭐ Hvězda",
-    'footer.donate': 'Kupte mi kávu',
+    'footer.donate': 'Sponzorovat',
 };

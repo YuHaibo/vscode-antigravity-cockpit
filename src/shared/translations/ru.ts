@@ -324,5 +324,5 @@ export const ru = {
     'announcement.type.urgent': '🚨 Срочно',
     'announcement.refreshed': 'Уведомления обновлены (всего {count})',
     'footer.star': "⭐ Звезда",
-    'footer.donate': 'Угостите кофе',
+    'footer.donate': 'Спонсировать',
 };

@@ -324,5 +324,5 @@ export const ko = {
     'announcement.type.urgent': '🚨 긴급',
     'announcement.refreshed': '알림이 업데이트되었습니다 (총 {count}개)',
     'footer.star': "⭐ 스타",
-    'footer.donate': '커피 한 잔 사주기',
+    'footer.donate': '후원',
 };

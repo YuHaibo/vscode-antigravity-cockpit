@@ -231,7 +231,7 @@ export const en = {
     // Footer
     'footer.enjoyingThis': 'Enjoying this? Give us a ⭐!',
     'footer.feedback': 'Feedback',
-    'footer.donate': 'Buy me a coffee',
+    'footer.donate': 'Sponsor',
 
     // Auto Trigger
     'autoTrigger.tabTitle': '⏰ Auto Wake-up',
