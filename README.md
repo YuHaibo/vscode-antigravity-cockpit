@@ -223,6 +223,16 @@ npm run package
 
 ---
 
+## 💬 交流群
+
+欢迎加入技术交流群，反馈问题或交流心得！
+
+| QQ 群 | 微信群 |
+| :---: | :---: |
+| <img src="docs/qq_group_qr.png" width="200" /> | <img src="docs/wechat_group_qr.png" width="200" /> |
+
+---
+
 ## ☕ 请作者喝杯咖啡
 
 如果这个插件对你有帮助，欢迎请作者喝杯咖啡！你的支持是我持续更新的最大动力 ❤️
