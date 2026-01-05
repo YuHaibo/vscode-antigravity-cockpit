@@ -137,6 +137,15 @@ export const cs = {
     'model.namePlaceholder': 'Zadejte název...',
     'model.ok': 'OK',
     'model.reset': 'Resetovat',
+    'models.manage': 'Spravovat modely',
+    'models.manageTitle': 'Spravovat zobrazené modely',
+    'models.hint': 'Vyberte modely k zobrazení',
+    'models.selectAll': 'Vybrat vše',
+    'models.clearAll': 'Vyčistit',
+    'models.selectRecommended': 'Doporučené',
+    'models.save': 'Uložit výběr',
+    'models.saved': 'Zobrazení modelů aktualizováno.',
+    'models.empty': 'Žádné dostupné modely.',
 
     // Formát Stavového Řádku
     'statusBarFormat.title': 'Styl Stavového Řádku',
@@ -216,17 +225,20 @@ export const cs = {
     'capability.tools': 'Nástroje',
     'capability.recommended': 'Doporučený Model',
 
-    // View Mode
     'dashboard.modelName': 'Název Modelu',
     'dashboard.name': 'Název',
     'dashboard.remainingQuota': 'Zbývající Kvóta',
     'grouping.nameLabel': 'Název Skupiny',
-    'viewMode.title': 'Režim Zobrazení',
-    'viewMode.card': 'Zobrazení Karet',
-    'viewMode.list': 'Zobrazení Seznamu',
     'displayMode.title': 'Režim Zobrazení',
     'displayMode.webview': 'Panel (Webview)',
     'displayMode.quickpick': 'Režim QuickPick',
+    'quotaSource.title': 'Zdroj kvóty',
+    'quotaSource.local': 'Místní',
+    'quotaSource.authorized': 'Autorizováno',
+    'quotaSource.authorizedMissing': 'Nejprve dokončete autorizaci probuzení.',
+    'quotaSource.localInfoTitle': 'Čte kvótu z místního procesu Antigravity. Stabilnější, ale vyžaduje spuštěného klienta.',
+    'quotaSource.localInfoDesc': '→ Klikněte pro přepnutí na autorizované monitorování',
+    'quotaSource.authorizedInfoTitle': 'Získává kvótu přes autorizovaná vzdálená API. Nezávisí na místním procesu, vhodné pro API relay nebo použití bez klienta Antigravity.',
 
     // Footer
     'footer.enjoyingThis': 'Líbí se vám? Dejte nám ⭐!',

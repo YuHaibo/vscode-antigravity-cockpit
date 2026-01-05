@@ -184,6 +184,8 @@ class AnnouncementService {
 
             return true;
         }).map(ann => {
+            let localizedActionLabel: string | undefined;
+            let localizedAnnouncement = ann;
             // 3. 多语言处理 (优先匹配全称如 zh-cn，其次匹配前缀如 zh)
             if (ann.locales) {
                 const localeKey = Object.keys(ann.locales).find(k => 
@@ -192,7 +194,8 @@ class AnnouncementService {
 
                 if (localeKey && ann.locales[localeKey]) {
                     const localized = ann.locales[localeKey];
-                    return {
+                    localizedActionLabel = localized.actionLabel;
+                    localizedAnnouncement = {
                         ...ann,
                         title: localized.title || ann.title,
                         summary: localized.summary || ann.summary,
@@ -204,8 +207,34 @@ class AnnouncementService {
                     };
                 }
             }
-            return ann;
+            const effectiveAction = this.resolveAnnouncementAction(localizedAnnouncement, localizedActionLabel);
+            return {
+                ...localizedAnnouncement,
+                action: effectiveAction,
+            };
         }).sort((a, b) => b.priority - a.priority);
+    }
+
+    private resolveAnnouncementAction(
+        ann: Announcement,
+        localizedActionLabel?: string,
+    ): Announcement['action'] {
+        let action = ann.action ?? null;
+        if (ann.actionOverrides && ann.actionOverrides.length > 0) {
+            const override = ann.actionOverrides.find(item =>
+                matchVersion(this.currentVersion, item.targetVersions || '*'),
+            );
+            if (override) {
+                action = override.action ? { ...override.action } : null;
+            }
+        }
+        if (action && localizedActionLabel) {
+            action = {
+                ...action,
+                label: localizedActionLabel,
+            };
+        }
+        return action;
     }
 
     /**

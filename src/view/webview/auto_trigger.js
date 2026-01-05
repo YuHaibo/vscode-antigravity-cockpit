@@ -18,6 +18,18 @@
     // 状态
     let currentState = null;
     let availableModels = [];
+    const blockedModelIds = new Set([
+        'chat_20706',
+        'chat_23310',
+        'gemini-2.5-flash-thinking',
+        'gemini-2.5-pro',
+    ]);
+    const blockedDisplayNames = new Set([
+        'Gemini 2.5 Flash (Thinking)',
+        'Gemini 2.5 Pro',
+        'chat_20706',
+        'chat_23310',
+    ]);
     let selectedModels = [];  // 从 state.schedule.selectedModels 获取
     let testSelectedModels = [];
     
@@ -181,10 +193,10 @@
             }
         });
 
-        // 点击模态框外部关闭
+        // 点击模态框外部关闭（重命名弹框除外）
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
+                if (e.target === modal && modal.id !== 'rename-modal') {
                     modal.classList.add('hidden');
                 }
             });
@@ -869,10 +881,16 @@
 
     function updateState(state) {
         currentState = state;
-        availableModels = state.availableModels || [];
+        availableModels = filterAvailableModels(state.availableModels || []);
         
         if (state.schedule?.selectedModels) {
             selectedModels = state.schedule.selectedModels;
+        }
+        if (availableModels.length > 0) {
+            selectedModels = selectedModels.filter(id => availableModels.some(model => model.id === id));
+            if (selectedModels.length === 0) {
+                selectedModels = [availableModels[0].id];
+            }
         }
 
         // 隐藏测试中状态（如果收到新状态说明测试完成了）
@@ -881,6 +899,29 @@
         updateAuthUI(state.authorization);
         updateStatusUI(state);
         updateHistoryCount(state.recentTriggers?.length || 0);
+    }
+
+    function filterAvailableModels(models) {
+        if (!Array.isArray(models) || models.length === 0) {
+            return [];
+        }
+        const filtered = [];
+        for (const model of models) {
+            const name = model.displayName || model.id;
+            const blockedById = blockedModelIds.has(model.id);
+            const blockedByName = blockedDisplayNames.has(name);
+            if (blockedById || blockedByName) {
+                if (blockedByName && !blockedById) {
+                    console.info('[AutoTrigger] Hidden model by name, please confirm ID:', {
+                        id: model.id,
+                        displayName: model.displayName,
+                    });
+                }
+                continue;
+            }
+            filtered.push(model);
+        }
+        return filtered;
     }
 
     function updateAuthUI(auth) {
@@ -964,9 +1005,18 @@
                 // Crontab 模式
                 modeText = `Crontab: ${schedule.crontab}`;
             } else if (schedule.repeatMode === 'daily' && schedule.dailyTimes?.length) {
-                modeText = `${t('autoTrigger.daily')} ${schedule.dailyTimes[0]}`;
-            } else if (schedule.repeatMode === 'weekly') {
-                modeText = `${t('autoTrigger.weekly')}`;
+                // 显示所有时间点，最多 5 个
+                const times = schedule.dailyTimes.slice(0, 5).join(', ');
+                const suffix = schedule.dailyTimes.length > 5 ? '...' : '';
+                modeText = `${t('autoTrigger.daily')} ${times}${suffix}`;
+            } else if (schedule.repeatMode === 'weekly' && schedule.weeklyDays?.length) {
+                // 显示选择的天和时间点（换行分开）
+                const dayNames = [t('time.sunday'), t('time.monday'), t('time.tuesday'), 
+                                  t('time.wednesday'), t('time.thursday'), t('time.friday'), t('time.saturday')];
+                const days = schedule.weeklyDays.map(d => dayNames[d] || d).join(', ');
+                const times = schedule.weeklyTimes?.slice(0, 5).join(', ') || '';
+                const timeSuffix = schedule.weeklyTimes?.length > 5 ? '...' : '';
+                modeText = `${t('autoTrigger.weekly')} ${days}\n${times}${timeSuffix}`;
             } else if (schedule.repeatMode === 'interval') {
                 modeText = `${t('autoTrigger.interval')} ${schedule.intervalHours || 4}h`;
             }

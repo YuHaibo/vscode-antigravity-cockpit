@@ -21,6 +21,14 @@ export interface AnnouncementAction {
     arguments?: unknown[];
 }
 
+/** 公告操作覆盖 */
+export interface AnnouncementActionOverride {
+    /** 版本范围 */
+    targetVersions: string;
+    /** 覆盖操作 */
+    action: AnnouncementAction | null;
+}
+
 /** 公告多语言内容 */
 export interface AnnouncementLocale {
     title?: string;
@@ -55,6 +63,8 @@ export interface Announcement {
     content: string;
     /** 操作按钮（可选） */
     action?: AnnouncementAction | null;
+    /** 操作覆盖（可选） */
+    actionOverrides?: AnnouncementActionOverride[];
     /** 目标版本范围（如 ">=1.6.0", "*" 表示所有） */
     targetVersions: string;
     /** 目标语言列表（如 ["zh-cn", "zh-tw"], ["*"] 或留空表示所有语言） */

@@ -137,6 +137,15 @@ export const tr = {
     'model.namePlaceholder': 'Ad girin...',
     'model.ok': 'Tamam',
     'model.reset': 'Sıfırla',
+    'models.manage': 'Modelleri Yönet',
+    'models.manageTitle': 'Görünen Modelleri Yönet',
+    'models.hint': 'Görüntülenecek modelleri seçin',
+    'models.selectAll': 'Tümünü seç',
+    'models.clearAll': 'Temizle',
+    'models.selectRecommended': 'Önerilen',
+    'models.save': 'Seçimi kaydet',
+    'models.saved': 'Model görünümü güncellendi.',
+    'models.empty': 'Kullanılabilir model yok.',
 
     // Durum Çubuğu Formatı
     'statusBarFormat.title': 'Durum Çubuğu Stili',
@@ -216,17 +225,20 @@ export const tr = {
     'capability.tools': 'Araçlar',
     'capability.recommended': 'Önerilen Model',
 
-    // View Mode
     'dashboard.modelName': 'Model Adı',
     'dashboard.name': 'Ad',
     'dashboard.remainingQuota': 'Kalan Kota',
     'grouping.nameLabel': 'Grup Adı',
-    'viewMode.title': 'Görünüm Modu',
-    'viewMode.card': 'Kart Görünümü',
-    'viewMode.list': 'Liste Görünümü',
     'displayMode.title': 'Görüntüleme Modu',
     'displayMode.webview': 'Gösterge Paneli (Webview)',
     'displayMode.quickpick': 'QuickPick Modu',
+    'quotaSource.title': 'Kota Kaynağı',
+    'quotaSource.local': 'Yerel',
+    'quotaSource.authorized': 'Yetkilendirilmiş',
+    'quotaSource.authorizedMissing': 'Önce uyandırma yetkilendirmesini tamamlayın.',
+    'quotaSource.localInfoTitle': 'Kotayı yerel Antigravity istemci sürecinden okur. Daha stabil, ancak istemcinin açık olması gerekir.',
+    'quotaSource.localInfoDesc': '→ Yetkili izlemeye geçmek için tıklayın',
+    'quotaSource.authorizedInfoTitle': 'Yetkili uzak API\'ler üzerinden kota alır. Yerel sürece bağlı değildir, API rölesi veya Antigravity istemcisi olmadan kullanım için uygundur.',
 
     // Footer
     'footer.enjoyingThis': 'Beğendiniz mi? Bize bir ⭐ verin!',

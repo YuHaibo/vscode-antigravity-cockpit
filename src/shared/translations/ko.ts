@@ -137,6 +137,15 @@ export const ko = {
     'model.namePlaceholder': '이름 입력...',
     'model.ok': '확인',
     'model.reset': '초기화',
+    'models.manage': '모델 관리',
+    'models.manageTitle': '표시 모델 관리',
+    'models.hint': '표시할 모델을 선택하세요',
+    'models.selectAll': '모두 선택',
+    'models.clearAll': '지우기',
+    'models.selectRecommended': '추천 모델',
+    'models.save': '선택 저장',
+    'models.saved': '모델 표시가 업데이트되었습니다.',
+    'models.empty': '사용 가능한 모델이 없습니다.',
 
     // 상태 표시줄 형식
     'statusBarFormat.title': '상태 표시줄 스타일',
@@ -216,17 +225,20 @@ export const ko = {
     'capability.tools': '도구',
     'capability.recommended': '추천 모델',
 
-    // View Mode
     'dashboard.modelName': '모델 이름',
     'dashboard.name': '이름',
     'dashboard.remainingQuota': '잔여 할당량',
     'grouping.nameLabel': '그룹 이름',
-    'viewMode.title': '보기 모드',
-    'viewMode.card': '카드 보기',
-    'viewMode.list': '목록 보기',
     'displayMode.title': '표시 모드',
     'displayMode.webview': '대시보드 (Webview)',
     'displayMode.quickpick': 'QuickPick 모드',
+    'quotaSource.title': '할당량 소스',
+    'quotaSource.local': '로컬',
+    'quotaSource.authorized': '인증',
+    'quotaSource.authorizedMissing': '먼저 깨우기 인증을 완료하세요.',
+    'quotaSource.localInfoTitle': '로컬 Antigravity 클라이언트 프로세스에서 할당량을 읽습니다. 안정적이지만 클라이언트를 실행해야 합니다.',
+    'quotaSource.localInfoDesc': '→',
+    'quotaSource.authorizedInfoTitle': '인증된 원격 API에서 할당량을 가져옵니다. 로컬 프로세스에 의존하지 않으며 API 중계나 Antigravity 클라이언트 없이 사용하는 경우에 적합합니다.',
 
     // Footer
     'footer.enjoyingThis': '마음에 드시나요? ⭐를 눌러주세요!',

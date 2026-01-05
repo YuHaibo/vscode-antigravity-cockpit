@@ -97,6 +97,119 @@ body {
     gap: 8px;
 }
 
+.quota-auth-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border-radius: 10px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+}
+
+.quota-auth-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+}
+
+.quota-source-info {
+    display: flex;
+    align-items: center;
+    margin-left: 16px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.quota-source-info.hidden {
+    display: none;
+}
+
+.quota-source-info .quota-source-info-content {
+    color: var(--text-secondary);
+}
+
+.quota-source-info .quota-source-info-text {
+    color: var(--text-secondary);
+}
+
+.quota-auth-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.quota-auth-email {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.quota-auth-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.model-manager-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 60vh;
+}
+
+.model-manager-hint {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.model-manager-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.model-manager-count {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.model-manager-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+    padding: 4px 0;
+    overflow-y: auto;
+}
+
+.model-manager-empty {
+    font-size: 13px;
+    color: var(--text-secondary);
+    padding: 12px;
+    text-align: center;
+}
+
+.model-manager-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.model-manager-item input {
+    margin: 0;
+}
+
 .spinner {
     width: 16px;
     height: 16px;
@@ -164,6 +277,42 @@ body {
     font-size: 14px;
     cursor: pointer;
     transition: all 0.2s;
+}
+
+.offline-card.local-card {
+    border-color: rgba(59, 130, 246, 0.6);
+    box-shadow: 0 8px 32px rgba(59, 130, 246, 0.18);
+}
+
+.offline-card.local-card h2 {
+    color: var(--text-primary);
+}
+
+.offline-card.authorized-card {
+    border-color: rgba(234, 179, 8, 0.6);
+    box-shadow: 0 8px 32px rgba(234, 179, 8, 0.18);
+}
+
+.offline-card.authorized-card h2 {
+    color: var(--text-primary);
+}
+
+.offline-card .icon.offline-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0;
+}
+
+.offline-card .icon.offline-spinner .spinner {
+    width: 36px;
+    height: 36px;
+    border-width: 3px;
+}
+
+.offline-detail {
+    font-size: 12px;
+    color: var(--text-secondary);
 }
 
 .btn-primary {
@@ -1387,6 +1536,63 @@ input:checked + .slider:before {
     justify-content: space-between;
 }
 
+/* ============ Quota Source Guide ============ */
+
+.quota-guide-modal {
+    max-width: 680px;
+}
+
+.quota-guide-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.quota-guide-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.quota-guide-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.quota-guide-option {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    text-align: left;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quota-guide-option:hover {
+    border-color: rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+}
+
+.quota-guide-option.active {
+    border-color: rgba(59, 130, 246, 0.9);
+    background: rgba(59, 130, 246, 0.15);
+}
+
+.quota-guide-option-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.quota-guide-option-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
 /* Range Hint */
 .range-hint {
     color: var(--text-secondary);
@@ -1914,6 +2120,7 @@ input:checked + .slider:before {
     margin-bottom: 16px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border-color);
+    align-items: center;
 }
 
 .tab-btn {
@@ -1953,6 +2160,73 @@ input:checked + .slider:before {
     right: 0;
     height: 2px;
     background: var(--card-bg);
+}
+
+.tab-spacer {
+    flex: 1;
+}
+
+.quota-source-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+}
+
+.quota-source-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.quota-source-buttons {
+    display: inline-flex;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 3px;
+    border-radius: 999px;
+}
+
+.quota-source-btn {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quota-source-btn:hover {
+    color: var(--text-primary);
+}
+
+.quota-source-btn.active {
+    color: var(--text-primary);
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.6);
+}
+
+.quota-source-btn.disabled,
+.quota-source-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.quota-source-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+}
+
+.quota-source-status[data-state='error'] {
+    background: var(--danger);
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
 }
 
 .tab-content {
@@ -2326,4 +2600,3 @@ input:checked + .slider:before {
     color: rgba(255, 255, 255, 0.6);
     font-size: 13px;
 }
-

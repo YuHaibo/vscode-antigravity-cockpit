@@ -12,6 +12,7 @@ import {
     ClientModelConfig,
     QuotaGroup,
     ScanDiagnostics,
+    UserInfo,
 } from '../shared/types';
 import { logger } from '../shared/log_service';
 import { configService } from '../shared/config_service';
@@ -20,7 +21,64 @@ import { TIMING, API_ENDPOINTS } from '../shared/constants';
 import { captureError } from '../shared/error_reporter';
 import { AntigravityError, isServerError } from '../shared/errors';
 import { autoTriggerController } from '../auto_trigger/controller';
+import { oauthService, credentialStorage } from '../auto_trigger';
 
+const AUTH_RECOMMENDED_LABELS = [
+    'Claude Opus 4.5 (Thinking)',
+    'Claude Sonnet 4.5',
+    'Claude Sonnet 4.5 (Thinking)',
+    'Gemini 3 Flash',
+    'Gemini 3 Pro (High)',
+    'Gemini 3 Pro (Low)',
+    'Gemini 3 Pro Image',
+    'GPT-OSS 120B (Medium)',
+];
+
+const AUTH_RECOMMENDED_MODEL_IDS = [
+    'MODEL_PLACEHOLDER_M12', // Claude Opus 4.5 (Thinking)
+    'MODEL_CLAUDE_4_5_SONNET',
+    'MODEL_CLAUDE_4_5_SONNET_THINKING',
+    'MODEL_PLACEHOLDER_M18', // Gemini 3 Flash
+    'MODEL_PLACEHOLDER_M7', // Gemini 3 Pro (High)
+    'MODEL_PLACEHOLDER_M8', // Gemini 3 Pro (Low)
+    'MODEL_PLACEHOLDER_M9', // Gemini 3 Pro Image
+    'MODEL_OPENAI_GPT_OSS_120B_MEDIUM',
+];
+
+const AUTH_RECOMMENDED_LABEL_RANK = new Map(
+    AUTH_RECOMMENDED_LABELS.map((label, index) => [label, index]),
+);
+
+const AUTH_RECOMMENDED_ID_RANK = new Map(
+    AUTH_RECOMMENDED_MODEL_IDS.map((id, index) => [id, index]),
+);
+
+const normalizeRecommendedKey = (value: string): string =>
+    value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const AUTH_RECOMMENDED_LABEL_KEY_RANK = new Map(
+    AUTH_RECOMMENDED_LABELS.map((label, index) => [normalizeRecommendedKey(label), index]),
+);
+
+const AUTH_RECOMMENDED_ID_KEY_RANK = new Map(
+    AUTH_RECOMMENDED_MODEL_IDS.map((id, index) => [normalizeRecommendedKey(id), index]),
+);
+
+
+interface AuthorizedQuotaInfo {
+    remainingFraction?: number;
+    resetTime?: string;
+}
+
+interface AuthorizedModelInfo {
+    displayName?: string;
+    model?: string;
+    quotaInfo?: AuthorizedQuotaInfo;
+}
+
+interface AuthorizedQuotaResponse {
+    models?: Record<string, AuthorizedModelInfo>;
+}
 
 
 /**
@@ -39,10 +97,20 @@ export class ReactorCore {
     
     /** 上一次的配额快照缓存 */
     private lastSnapshot?: QuotaSnapshot;
+    /** 上一次快照的来源 */
+    private lastSnapshotSource?: 'local' | 'authorized';
     /** 上一次的原始 API 响应缓存（用于 reprocess 时重新生成分组） */
     private lastRawResponse?: ServerUserStatusResponse;
+    /** 上一次的授权配额模型缓存（用于 reprocess 时重新生成分组） */
+    private lastAuthorizedModels?: ModelQuotaInfo[];
+    /** 本地配额上次拉取时间 */
+    private lastLocalFetchedAt?: number;
+    /** 授权配额上次拉取时间 */
+    private lastAuthorizedFetchedAt?: number;
     /** 是否已经成功获取过配额数据（用于决定是否上报后续错误） */
     private hasSuccessfulSync: boolean = false;
+    /** 初始化同步重试标识，用于中断本地重试流程 */
+    private initRetryToken: number = 0;
 
     constructor() {
         logger.debug('ReactorCore Online');
@@ -160,7 +228,9 @@ export class ReactorCore {
         logger.info(`Reactor Pulse: ${interval}ms`);
 
         // 启动时使用带重试的初始化同步，失败会自动重试
-        this.initWithRetry();
+        this.initRetryToken += 1;
+        const retryToken = this.initRetryToken;
+        this.initWithRetry(3, 0, retryToken);
 
         // 定时同步（失败不重试，等下一个周期自然重试）
         this.pulseTimer = setInterval(() => {
@@ -177,23 +247,44 @@ export class ReactorCore {
     private async initWithRetry(
         maxRetries: number = 3,
         currentRetry: number = 0,
+        retryToken: number = this.initRetryToken,
     ): Promise<void> {
+        if (retryToken !== this.initRetryToken) {
+            logger.info('Init sync retry canceled');
+            return;
+        }
         try {
             await this.syncTelemetryCore();
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
+            const source = this.getSyncErrorSource(err);
+            const endpoint = source === 'authorized'
+                ? 'v1internal:fetchAvailableModels'
+                : API_ENDPOINTS.GET_USER_STATUS;
+            if (this.shouldIgnoreSyncError(err)) {
+                logger.info(`[ReactorCore] Ignoring ${this.getSyncErrorSource(err)} init error after source switch: ${err.message}`);
+                return;
+            }
             
+            if (retryToken !== this.initRetryToken) {
+                logger.info('Init sync retry canceled after error');
+                return;
+            }
             if (currentRetry < maxRetries) {
                 // 还有重试机会，使用指数退避
                 const delay = 2000 * (currentRetry + 1);  // 2s, 4s, 6s
-                logger.warn(`Init sync failed, retry ${currentRetry + 1}/${maxRetries} in ${delay}ms: ${err.message}`);
+                const sourceInfo = source ? `source=${source}` : 'source=unknown';
+                const endpointInfo = `endpoint=${endpoint}`;
+                logger.warn(`Init sync failed (${sourceInfo}, ${endpointInfo}), retry ${currentRetry + 1}/${maxRetries} in ${delay}ms: ${err.message}`);
                 
                 await this.delay(delay);
-                return this.initWithRetry(maxRetries, currentRetry + 1);
+                return this.initWithRetry(maxRetries, currentRetry + 1, retryToken);
             }
             
             // 超过最大重试次数，触发错误回调
-            logger.error(`Init sync failed after ${maxRetries} retries: ${err.message}`);
+            const sourceInfo = source ? `source=${source}` : 'source=unknown';
+            const endpointInfo = `endpoint=${endpoint}`;
+            logger.error(`Init sync failed after ${maxRetries} retries (${sourceInfo}, ${endpointInfo}): ${err.message}`);
             
             // 服务端返回的错误不上报（如"未登录"），这不属于插件 Bug
             if (!isServerError(err)) {
@@ -214,6 +305,32 @@ export class ReactorCore {
                 this.errorHandler(err);
             }
         }
+    }
+
+    /**
+     * 中断初始化重试流程
+     */
+    cancelInitRetry(): void {
+        this.initRetryToken += 1;
+    }
+
+    private wrapSyncError(error: unknown, source: 'local' | 'authorized'): Error {
+        const err = error instanceof Error ? error : new Error(String(error));
+        (err as Error & { source?: string }).source = source;
+        return err;
+    }
+
+    private getSyncErrorSource(error: Error): string | undefined {
+        return (error as Error & { source?: string }).source;
+    }
+
+    private shouldIgnoreSyncError(error: Error): boolean {
+        const source = this.getSyncErrorSource(error);
+        if (!source) {
+            return false;
+        }
+        const currentSource = configService.getConfig().quotaSource === 'authorized' ? 'authorized' : 'local';
+        return source !== currentSource;
     }
 
     /**
@@ -241,7 +358,17 @@ export class ReactorCore {
             await this.syncTelemetryCore();
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
-            logger.error(`Telemetry Sync Failed: ${err.message}`);
+            if (this.shouldIgnoreSyncError(err)) {
+                logger.info(`[ReactorCore] Ignoring ${this.getSyncErrorSource(err)} sync error after source switch: ${err.message}`);
+                return;
+            }
+            const source = this.getSyncErrorSource(err);
+            const currentSource = configService.getConfig().quotaSource === 'authorized' ? 'authorized' : 'local';
+            const sourceInfo = source ? `source=${source}` : 'source=unknown';
+            const endpoint = source === 'authorized'
+                ? 'v1internal:fetchAvailableModels'
+                : API_ENDPOINTS.GET_USER_STATUS;
+            logger.error(`Telemetry Sync Failed (${sourceInfo}, current=${currentSource}, endpoint=${endpoint}): ${err.message}`);
             
             // 只有在从未成功获取过配额时才上报，成功后的定时同步失败不上报
             // 服务端返回的错误不上报（如"未登录"），这不属于插件 Bug
@@ -267,29 +394,73 @@ export class ReactorCore {
      * 同步遥测数据核心逻辑（可抛出异常，用于重试机制）
      */
     private async syncTelemetryCore(): Promise<void> {
-        const raw = await this.transmit<ServerUserStatusResponse>(
-            API_ENDPOINTS.GET_USER_STATUS,
-            {
-                metadata: {
-                    ideName: 'antigravity',
-                    extensionName: 'antigravity',
-                    locale: 'en',
+        const config = configService.getConfig();
+        if (config.quotaSource === 'authorized') {
+            try {
+                const hasAuth = await credentialStorage.hasValidCredential();
+                if (!hasAuth) {
+                    const telemetry = ReactorCore.createOfflineSnapshot();
+                    this.publishTelemetry(telemetry, 'authorized');
+                    return;
+                }
+                const telemetry = await this.fetchAuthorizedTelemetry();
+                this.lastAuthorizedFetchedAt = Date.now();
+                this.publishTelemetry(telemetry, 'authorized');
+                return;
+            } catch (error) {
+                throw this.wrapSyncError(error, 'authorized');
+            }
+        }
+
+        let raw: ServerUserStatusResponse;
+        try {
+            raw = await this.transmit<ServerUserStatusResponse>(
+                API_ENDPOINTS.GET_USER_STATUS,
+                {
+                    metadata: {
+                        ideName: 'antigravity',
+                        extensionName: 'antigravity',
+                        locale: 'en',
+                    },
                 },
-            },
-        );
+            );
+        } catch (error) {
+            throw this.wrapSyncError(error, 'local');
+        }
 
         this.lastRawResponse = raw; // 缓存原始响应
+        this.lastLocalFetchedAt = Date.now();
         const telemetry = this.decodeSignal(raw);
-        this.lastSnapshot = telemetry; // Cache the latest snapshot
+        this.publishTelemetry(telemetry, 'local');
+    }
 
-        // 打印关键配额信息
-        const maxLabelLen = Math.max(...telemetry.models.map(m => m.label.length));
-        const quotaSummary = telemetry.models.map(m => {
-            const pct = m.remainingPercentage !== undefined ? m.remainingPercentage.toFixed(2) + '%' : 'N/A';
-            return `    ${m.label.padEnd(maxLabelLen)} : ${pct}`;
-        }).join('\n');
-        
-        logger.info(`Quota Update:\n${quotaSummary}`);
+    /**
+     * 发布遥测数据到 UI
+     */
+    private publishTelemetry(telemetry: QuotaSnapshot, source?: 'local' | 'authorized'): void {
+        if (source) {
+            const currentSource = configService.getConfig().quotaSource === 'authorized' ? 'authorized' : 'local';
+            if (source !== currentSource) {
+                logger.debug(`[ReactorCore] Skipping ${source} telemetry (current source: ${currentSource})`);
+                return;
+            }
+        }
+        this.lastSnapshot = telemetry; // Cache the latest snapshot
+        if (source) {
+            this.lastSnapshotSource = source;
+        }
+
+        if (telemetry.models.length > 0) {
+            const maxLabelLen = Math.max(...telemetry.models.map(m => m.label.length));
+            const quotaSummary = telemetry.models.map(m => {
+                const pct = m.remainingPercentage !== undefined ? m.remainingPercentage.toFixed(2) + '%' : 'N/A';
+                return `    ${m.label.padEnd(maxLabelLen)} : ${pct}`;
+            }).join('\n');
+            
+            logger.info(`Quota Update:\n${quotaSummary}`);
+        } else {
+            logger.info('Quota Update: No models available');
+        }
 
         // 标记已成功获取过配额数据，后续定时同步失败不再上报
         this.hasSuccessfulSync = true;
@@ -299,9 +470,108 @@ export class ReactorCore {
         }
         
         // 检查配额重置并触发自动唤醒（异步执行，不阻塞主流程）
-        this.checkQuotaResetTrigger(telemetry.models).catch(err => {
-            logger.warn(`[ReactorCore] Wake on reset check failed: ${err}`);
-        });
+        if (telemetry.models.length > 0) {
+            this.checkQuotaResetTrigger(telemetry.models).catch(err => {
+                logger.warn(`[ReactorCore] Wake on reset check failed: ${err}`);
+            });
+        }
+    }
+
+    /**
+     * 获取授权配额并构建快照
+     */
+    private async fetchAuthorizedTelemetry(): Promise<QuotaSnapshot> {
+        const accessToken = await oauthService.getValidAccessToken();
+        if (!accessToken) {
+            throw new Error(t('quotaSource.authorizedMissing') || 'Authorize auto wake-up first');
+        }
+
+        const models = await this.fetchAuthorizedQuotaModels(accessToken);
+        this.lastAuthorizedModels = models;
+        await this.ensureAuthorizedVisibleModels(models);
+        return this.buildSnapshot(models);
+    }
+
+    private async fetchAuthorizedQuotaModels(accessToken: string): Promise<ModelQuotaInfo[]> {
+        const url = 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels';
+        logger.info(`[AuthorizedQuota] Fetching available models (url=${url})`);
+        let response: Response;
+        try {
+            response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'User-Agent': 'antigravity',
+                    'Content-Type': 'application/json',
+                    'Accept-Encoding': 'gzip',
+                },
+                body: JSON.stringify({}),
+            });
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error(`[AuthorizedQuota] Request failed (url=${url}): ${err.message}`);
+            throw err;
+        }
+
+        if (!response.ok) {
+            throw new Error(`Authorized quota request failed (${response.status})`);
+        }
+
+        const data = await response.json() as AuthorizedQuotaResponse;
+        const models: ModelQuotaInfo[] = [];
+        const now = Date.now();
+
+        if (!data.models) {
+            return models;
+        }
+
+        for (const [modelKey, info] of Object.entries(data.models)) {
+            const quotaInfo = info.quotaInfo;
+            if (!quotaInfo) {
+                continue;
+            }
+
+            const remainingFraction = Math.min(1, Math.max(0, quotaInfo.remainingFraction ?? 0));
+            
+            // 解析 resetTime，处理无效值的情况
+            let resetTime: Date;
+            let resetTimeValid = true;
+            if (quotaInfo.resetTime) {
+                const parsed = new Date(quotaInfo.resetTime);
+                if (!Number.isNaN(parsed.getTime())) {
+                    resetTime = parsed;
+                } else {
+                    // 无效的 resetTime 字符串，使用 24 小时后作为备用
+                    resetTime = new Date(now + 24 * 60 * 60 * 1000);
+                    resetTimeValid = false;
+                    logger.warn(`[AuthorizedQuota] Invalid resetTime for model ${modelKey}: ${quotaInfo.resetTime}`);
+                }
+            } else {
+                // 没有 resetTime，使用 24 小时后作为备用
+                resetTime = new Date(now + 24 * 60 * 60 * 1000);
+                resetTimeValid = false;
+            }
+            
+            const timeUntilReset = Math.max(0, resetTime.getTime() - now);
+            const modelId = info.model || modelKey;
+            const label = info.displayName || modelKey;
+
+            models.push({
+                label,
+                modelId,
+                remainingFraction,
+                remainingPercentage: remainingFraction * 100,
+                isExhausted: remainingFraction <= 0,
+                resetTime,
+                resetTimeDisplay: resetTimeValid ? this.formatIso(resetTime) : (t('common.unknown') || 'Unknown'),
+                timeUntilReset,
+                timeUntilResetFormatted: resetTimeValid ? this.formatDelta(timeUntilReset) : (t('common.unknown') || 'Unknown'),
+                resetTimeValid,
+            });
+        }
+
+        models.sort((a, b) => a.label.localeCompare(b.label));
+        return models;
     }
     
     /**
@@ -309,13 +579,31 @@ export class ReactorCore {
      */
     private async checkQuotaResetTrigger(models: ModelQuotaInfo[]): Promise<void> {
         // 构建检测所需的数据
-        const modelData = models.map(m => ({
-            id: m.modelId,
-            resetAt: m.resetTime.toISOString(),
-            remaining: m.remainingFraction !== undefined ? Math.round(m.remainingFraction * 100) : 0,
-            limit: 100,  // 使用百分比，limit 固定为 100
-        }));
-        
+        const modelData = models
+            .filter(m => {
+                if (m.resetTimeValid === false) {
+                    logger.debug(`[ReactorCore] Skip wake on reset: invalid resetTime for ${m.label}`);
+                    return false;
+                }
+                const resetAtMs = m.resetTime.getTime();
+                if (Number.isNaN(resetAtMs)) {
+                    logger.warn(`[ReactorCore] Skip wake on reset: NaN resetTime for ${m.label}`);
+                    return false;
+                }
+                return true;
+            })
+            .map(m => ({
+                id: m.modelId,
+                resetAt: m.resetTime.toISOString(),
+                remaining: m.remainingFraction !== undefined ? Math.floor(m.remainingFraction * 100) : 0,
+                limit: 100,  // 使用百分比，limit 固定为 100
+            }));
+
+        if (modelData.length === 0) {
+            logger.debug('[ReactorCore] Wake on reset: no valid models to check');
+            return;
+        }
+
         await autoTriggerController.checkAndTriggerOnQuotaReset(modelData);
     }
 
@@ -324,19 +612,30 @@ export class ReactorCore {
      * 用于在配置变更等不需要重新请求 API 的场景下更新 UI
      */
     reprocess(): void {
-        if (this.lastRawResponse && this.updateHandler) {
-            logger.info('Reprocessing cached telemetry data with latest config');
-            // 重新调用 decodeSignal 以根据最新配置生成分组
+        const quotaSource = configService.getConfig().quotaSource === 'authorized' ? 'authorized' : 'local';
+        if (quotaSource === 'local' && this.lastRawResponse && this.updateHandler) {
+            logger.info('Reprocessing cached local telemetry data with latest config');
             const telemetry = this.decodeSignal(this.lastRawResponse);
-            this.lastSnapshot = telemetry;
-            this.updateHandler(telemetry);
-        } else if (this.lastSnapshot && this.updateHandler) {
-            // 如果没有原始响应，回退到旧的行为
+            this.publishTelemetry(telemetry, 'local');
+            return;
+        }
+
+        if (quotaSource === 'authorized' && this.lastAuthorizedModels && this.updateHandler) {
+            logger.info('Reprocessing cached authorized telemetry data with latest config');
+            const telemetry = this.buildSnapshot(this.lastAuthorizedModels);
+            this.publishTelemetry(telemetry, 'authorized');
+            return;
+        }
+
+        if (this.lastSnapshot && this.lastSnapshotSource === quotaSource && this.updateHandler) {
             logger.info('Reprocessing cached snapshot (no raw response)');
             this.updateHandler(this.lastSnapshot);
-        } else {
-            logger.warn('Cannot reprocess: no cached data available');
+            return;
         }
+
+        // 没有可用缓存，触发网络请求获取数据
+        logger.warn('Cannot reprocess: no cached data available, triggering sync');
+        this.syncTelemetry();
     }
 
     /**
@@ -344,6 +643,45 @@ export class ReactorCore {
      */
     get hasCache(): boolean {
         return !!this.lastSnapshot;
+    }
+
+    /**
+     * 获取指定来源缓存的年龄（毫秒）
+     */
+    getCacheAgeMs(source: 'local' | 'authorized'): number | undefined {
+        const lastFetchedAt = source === 'local' ? this.lastLocalFetchedAt : this.lastAuthorizedFetchedAt;
+        if (!lastFetchedAt) {
+            return undefined;
+        }
+        return Date.now() - lastFetchedAt;
+    }
+
+    /**
+     * 立即发布指定来源的缓存数据（不触发网络请求）
+     */
+    publishCachedTelemetry(source: 'local' | 'authorized'): boolean {
+        if (!this.updateHandler) {
+            return false;
+        }
+
+        if (source === 'local' && this.lastRawResponse) {
+            const telemetry = this.decodeSignal(this.lastRawResponse);
+            this.publishTelemetry(telemetry, 'local');
+            return true;
+        }
+
+        if (source === 'authorized' && this.lastAuthorizedModels) {
+            const telemetry = this.buildSnapshot(this.lastAuthorizedModels);
+            this.publishTelemetry(telemetry, 'authorized');
+            return true;
+        }
+
+        if (this.lastSnapshot && this.lastSnapshotSource === source) {
+            this.updateHandler(this.lastSnapshot);
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -382,7 +720,7 @@ export class ReactorCore {
             }
         }
 
-        const userInfo: import('../shared/types').UserInfo = {
+        const userInfo: UserInfo = {
             name: status.name || 'Unknown User',
             email: status.email || 'N/A',
             planName: plan?.planName || 'N/A',
@@ -443,8 +781,14 @@ export class ReactorCore {
                 !!m.quotaInfo,
             )
             .map((m) => {
-                const reset = new Date(m.quotaInfo.resetTime);
                 const now = new Date();
+                let reset = new Date(m.quotaInfo.resetTime);
+                let resetTimeValid = true;
+                if (Number.isNaN(reset.getTime())) {
+                    reset = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+                    resetTimeValid = false;
+                    logger.warn(`[ReactorCore] Invalid resetTime for model ${m.label}: ${m.quotaInfo.resetTime}`);
+                }
                 const delta = reset.getTime() - now.getTime();
 
                 return {
@@ -456,9 +800,10 @@ export class ReactorCore {
                         : undefined,
                     isExhausted: m.quotaInfo.remainingFraction === 0,
                     resetTime: reset,
-                    resetTimeDisplay: this.formatIso(reset),
+                    resetTimeDisplay: resetTimeValid ? this.formatIso(reset) : (t('common.unknown') || 'Unknown'),
                     timeUntilReset: delta,
-                    timeUntilResetFormatted: this.formatDelta(delta),
+                    timeUntilResetFormatted: resetTimeValid ? this.formatDelta(delta) : (t('common.unknown') || 'Unknown'),
+                    resetTimeValid,
                     // 模型能力字段
                     supportsImages: m.supportsImages,
                     isRecommended: m.isRecommended,
@@ -488,8 +833,33 @@ export class ReactorCore {
             return a.label.localeCompare(b.label);
         });
 
-        // 分组逻辑：使用存储的 groupMappings 进行分组
+        return this.buildSnapshot(models, promptCredits, userInfo);
+    }
+
+    private buildSnapshot(
+        models: ModelQuotaInfo[],
+        promptCredits?: PromptCreditsInfo,
+        userInfo?: UserInfo,
+    ): QuotaSnapshot {
         const config = configService.getConfig();
+        const allModels = [...models];
+        const visibleModels = config.visibleModels ?? [];
+        if (visibleModels.length > 0) {
+            const visibleSet = new Set(visibleModels);
+            const filteredModels = models.filter(model => visibleSet.has(model.modelId));
+            
+            // 安全检查：如果过滤后为空但原始列表不为空，可能是配置问题
+            if (filteredModels.length === 0 && models.length > 0) {
+                logger.warn(`[buildSnapshot] Visible models filter resulted in empty list. ` +
+                    `Original: ${models.length}, Visible config: ${visibleModels.length}. ` +
+                    `Showing all models instead.`);
+                // 不应用过滤，保留原始列表
+            } else {
+                models = filteredModels;
+            }
+        }
+
+        // 分组逻辑：使用存储的 groupMappings 进行分组
         let groups: QuotaGroup[] | undefined;
         
         if (config.groupingEnabled) {
@@ -680,9 +1050,67 @@ export class ReactorCore {
             promptCredits,
             userInfo,
             models,
+            allModels,
             groups,
             isConnected: true,
         };
+    }
+
+    private getAuthorizedRecommendedIds(models: ModelQuotaInfo[]): string[] {
+        return models
+            .filter(model => this.getAuthorizedRecommendedRank(model) < Number.MAX_SAFE_INTEGER)
+            .sort((a, b) => {
+                const aRank = this.getAuthorizedRecommendedRank(a);
+                const bRank = this.getAuthorizedRecommendedRank(b);
+                if (aRank !== bRank) {
+                    return aRank - bRank;
+                }
+                return a.label.localeCompare(b.label);
+            })
+            .map(model => model.modelId);
+    }
+
+    private getAuthorizedRecommendedRank(model: ModelQuotaInfo): number {
+        const idRank = AUTH_RECOMMENDED_ID_RANK.get(model.modelId);
+        if (idRank !== undefined) {
+            return idRank;
+        }
+        const labelRank = AUTH_RECOMMENDED_LABEL_RANK.get(model.label);
+        if (labelRank !== undefined) {
+            return labelRank;
+        }
+        const normalizedId = normalizeRecommendedKey(model.modelId);
+        const normalizedLabel = normalizeRecommendedKey(model.label);
+        return Math.min(
+            AUTH_RECOMMENDED_ID_KEY_RANK.get(normalizedId) ?? Number.MAX_SAFE_INTEGER,
+            AUTH_RECOMMENDED_LABEL_KEY_RANK.get(normalizedLabel) ?? Number.MAX_SAFE_INTEGER,
+        );
+    }
+
+    private async ensureAuthorizedVisibleModels(models: ModelQuotaInfo[]): Promise<void> {
+        const config = configService.getConfig();
+        if (config.quotaSource !== 'authorized') {
+            return;
+        }
+
+        const initialized = configService.getStateFlag('visibleModelsInitializedAuthorized', false);
+        if (config.visibleModels.length > 0) {
+            if (!initialized) {
+                await configService.setStateFlag('visibleModelsInitializedAuthorized', true);
+            }
+            return;
+        }
+
+        if (initialized || models.length === 0) {
+            return;
+        }
+
+        const recommendedIds = this.getAuthorizedRecommendedIds(models);
+        const defaultVisible = recommendedIds.length > 0
+            ? recommendedIds
+            : models.map(model => model.modelId);
+        await configService.updateVisibleModels(defaultVisible);
+        await configService.setStateFlag('visibleModelsInitializedAuthorized', true);
     }
 
     /**

@@ -137,6 +137,15 @@ export const ru = {
     'model.namePlaceholder': 'Введите имя...',
     'model.ok': 'ОК',
     'model.reset': 'Сбросить',
+    'models.manage': 'Управление моделями',
+    'models.manageTitle': 'Управление отображаемыми моделями',
+    'models.hint': 'Выберите модели для отображения',
+    'models.selectAll': 'Выбрать все',
+    'models.clearAll': 'Очистить',
+    'models.selectRecommended': 'Рекомендуемые',
+    'models.save': 'Сохранить выбор',
+    'models.saved': 'Отображение моделей обновлено.',
+    'models.empty': 'Нет доступных моделей.',
 
     // Формат строки состояния
     'statusBarFormat.title': 'Стиль строки состояния',
@@ -216,17 +225,20 @@ export const ru = {
     'capability.tools': 'Инструменты',
     'capability.recommended': 'Рекомендуемая модель',
 
-    // View Mode
     'dashboard.modelName': 'Название модели',
     'dashboard.name': 'Название',
     'dashboard.remainingQuota': 'Остаток квоты',
     'grouping.nameLabel': 'Название группы',
-    'viewMode.title': 'Режим просмотра',
-    'viewMode.card': 'Карточки',
-    'viewMode.list': 'Список',
     'displayMode.title': 'Режим отображения',
     'displayMode.webview': 'Панель (Webview)',
     'displayMode.quickpick': 'Режим QuickPick',
+    'quotaSource.title': 'Источник квоты',
+    'quotaSource.local': 'Локальный',
+    'quotaSource.authorized': 'Авторизовано',
+    'quotaSource.authorizedMissing': 'Сначала завершите авторизацию пробуждения.',
+    'quotaSource.localInfoTitle': 'Получает квоту из локального процесса Antigravity. Стабильнее, но требует запущенного клиента.',
+    'quotaSource.localInfoDesc': '→ Нажмите, чтобы переключиться на авторизованный мониторинг',
+    'quotaSource.authorizedInfoTitle': 'Получает квоту через авторизованные удаленные API. Не зависит от локального процесса, подходит для API‑ретрансляции или использования без клиента Antigravity.',
 
     // Footer
     'footer.enjoyingThis': 'Нравится? Поставьте нам ⭐!',

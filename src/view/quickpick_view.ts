@@ -506,8 +506,7 @@ export class QuickPickView {
                 break;
                 
             case 'refresh': {
-                const config = configService.getConfig();
-                const cooldownSeconds = config.refreshInterval || 120;
+                const cooldownSeconds = 10;
                 const now = Date.now();
                 const elapsed = Math.floor((now - this.lastRefreshTime) / 1000);
                 const remaining = cooldownSeconds - elapsed;

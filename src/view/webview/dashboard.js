@@ -17,6 +17,10 @@
     const toast = document.getElementById('toast');
     const settingsModal = document.getElementById('settings-modal');
     const renameModal = document.getElementById('rename-modal');
+    const modelManagerModal = document.getElementById('model-manager-modal');
+    const modelManagerList = document.getElementById('model-manager-list');
+    const modelManagerCount = document.getElementById('model-manager-count');
+    const quotaSourceInfo = document.getElementById('quota-source-info');
 
     // 国际化文本
     const i18n = window.__i18n || {};
@@ -30,13 +34,54 @@
     let renameModelIds = [];  // 当前分组包含的模型 ID
     let renameModelId = null; // 当前正在重命名的模型 ID（非分组模式）
     let isRenamingModel = false; // 标记是否正在重命名模型（而非分组）
-    let currentViewMode = 'card';
+    let currentQuotaSource = 'local';
+    let isQuotaSourceSwitching = false;
+    let pendingQuotaSource = null;
+    let authorizedAvailable = false;
+    let authorizationStatus = null;
+    let visibleModelIds = [];
     let renameOriginalName = ''; // 原始名称（用于重置）
     let isProfileHidden = false;  // 控制整个计划详情卡片的显示/隐藏
     let isDataMasked = false;     // 控制数据是否显示为 ***
+    let modelManagerSelection = new Set();
+    let modelManagerModels = [];
 
-    // 刷新冷却时间（秒），默认 120 秒
-    let refreshCooldown = 120;
+    // 刷新冷却时间（秒）
+    let refreshCooldown = 10;
+
+    const AUTH_RECOMMENDED_LABELS = [
+        'Claude Opus 4.5 (Thinking)',
+        'Claude Sonnet 4.5',
+        'Claude Sonnet 4.5 (Thinking)',
+        'Gemini 3 Flash',
+        'Gemini 3 Pro (High)',
+        'Gemini 3 Pro (Low)',
+        'Gemini 3 Pro Image',
+        'GPT-OSS 120B (Medium)'
+    ];
+    const AUTH_RECOMMENDED_MODEL_IDS = [
+        'MODEL_PLACEHOLDER_M12',
+        'MODEL_CLAUDE_4_5_SONNET',
+        'MODEL_CLAUDE_4_5_SONNET_THINKING',
+        'MODEL_PLACEHOLDER_M18',
+        'MODEL_PLACEHOLDER_M7',
+        'MODEL_PLACEHOLDER_M8',
+        'MODEL_PLACEHOLDER_M9',
+        'MODEL_OPENAI_GPT_OSS_120B_MEDIUM'
+    ];
+    const normalizeRecommendedKey = value => (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const AUTH_RECOMMENDED_LABEL_RANK = new Map(
+        AUTH_RECOMMENDED_LABELS.map((label, index) => [label, index])
+    );
+    const AUTH_RECOMMENDED_ID_RANK = new Map(
+        AUTH_RECOMMENDED_MODEL_IDS.map((id, index) => [id, index])
+    );
+    const AUTH_RECOMMENDED_LABEL_KEY_RANK = new Map(
+        AUTH_RECOMMENDED_LABELS.map((label, index) => [normalizeRecommendedKey(label), index])
+    );
+    const AUTH_RECOMMENDED_ID_KEY_RANK = new Map(
+        AUTH_RECOMMENDED_MODEL_IDS.map((id, index) => [normalizeRecommendedKey(id), index])
+    );
 
     // 自定义分组弹框状态
     const customGroupingModal = document.getElementById('custom-grouping-modal');
@@ -60,8 +105,11 @@
                 startCooldown(state.refreshCooldown - diff);
             }
         }
+        if (state.quotaSource) {
+            currentQuotaSource = state.quotaSource;
+        }
         
-        // isProfileHidden, currentViewMode, and isDataMasked are now loaded from config in handleMessage
+        // isProfileHidden and isDataMasked are now loaded from config in handleMessage
 
         // 绑定事件
         refreshBtn.addEventListener('click', handleRefresh);
@@ -71,7 +119,12 @@
         if (resetOrderBtn) {
             resetOrderBtn.addEventListener('click', handleResetOrder);
         }
-        
+
+        const manageModelsBtn = document.getElementById('manage-models-btn');
+        if (manageModelsBtn) {
+            manageModelsBtn.addEventListener('click', openModelManagerModal);
+        }
+
         // 计划详情开关按钮
         const toggleProfileBtn = document.getElementById('toggle-profile-btn');
         if (toggleProfileBtn) {
@@ -89,6 +142,15 @@
         if (settingsBtn) {
             settingsBtn.addEventListener('click', openSettingsModal);
         }
+
+        // 配额来源切换
+        const quotaSourceButtons = document.querySelectorAll('.quota-source-btn');
+        quotaSourceButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const source = btn.dataset.source;
+                requestQuotaSourceChange(source);
+            });
+        });
         
         // 关闭设置模态框
         const closeSettingsBtn = document.getElementById('close-settings-btn');
@@ -117,6 +179,19 @@
                 }
             });
         }
+
+        document.getElementById('model-manager-close')?.addEventListener('click', closeModelManagerModal);
+        document.getElementById('model-manager-cancel')?.addEventListener('click', closeModelManagerModal);
+        document.getElementById('model-manager-save')?.addEventListener('click', saveModelManagerSelection);
+        document.getElementById('model-manager-select-all')?.addEventListener('click', () => {
+            updateModelManagerSelection('all');
+        });
+        document.getElementById('model-manager-clear')?.addEventListener('click', () => {
+            updateModelManagerSelection('none');
+        });
+        document.getElementById('model-manager-select-recommended')?.addEventListener('click', () => {
+            updateModelManagerSelection('recommended');
+        });
         
         // 重置名称按钮
         const resetNameBtn = document.getElementById('reset-name-btn');
@@ -183,6 +258,8 @@
         // Tab 导航切换
         initTabNavigation();
 
+        renderLoadingCard(currentQuotaSource);
+
         // 通知扩展已准备就绪
         vscode.postMessage({ command: 'init' });
     }
@@ -227,16 +304,6 @@
             if (notificationCheckbox) notificationCheckbox.checked = currentConfig.notificationEnabled !== false;
             if (warningInput) warningInput.value = currentConfig.warningThreshold || 30;
             if (criticalInput) criticalInput.value = currentConfig.criticalThreshold || 10;
-
-            // View Mode Select Logic
-            const viewModeSelect = document.getElementById('view-mode-select');
-            if (viewModeSelect) {
-                viewModeSelect.value = currentViewMode;
-                viewModeSelect.onchange = () => {
-                   const newViewMode = viewModeSelect.value;
-                   vscode.postMessage({ command: 'updateViewMode', viewMode: newViewMode });
-                };
-            }
 
             // Display Mode Select Logic (Webview vs QuickPick)
             const displayModeSelect = document.getElementById('display-mode-select');
@@ -562,18 +629,25 @@
             if (message.config) {
                 currentConfig = message.config;
                 
-                // 从配置更新刷新冷却时间
-                if (message.config.refreshInterval) {
-                    refreshCooldown = message.config.refreshInterval;
-                }
-                
-                // 从配置读取 profileHidden 和 viewMode（持久化存储）
+                // 从配置读取 profileHidden（持久化存储）
                 if (message.config.profileHidden !== undefined) {
                     isProfileHidden = message.config.profileHidden;
                     updateToggleProfileButton();
                 }
-                if (message.config.viewMode) {
-                    currentViewMode = message.config.viewMode;
+                if (message.config.quotaSource) {
+                    if (!isQuotaSourceSwitching || message.config.quotaSource === pendingQuotaSource) {
+                        currentQuotaSource = message.config.quotaSource;
+                        vscode.setState({ ...vscode.getState(), quotaSource: currentQuotaSource });
+                    }
+                }
+                if (message.config.authorizedAvailable !== undefined) {
+                    authorizedAvailable = message.config.authorizedAvailable;
+                }
+                if (message.config.authorizationStatus !== undefined) {
+                    authorizationStatus = message.config.authorizationStatus;
+                }
+                if (Array.isArray(message.config.visibleModels)) {
+                    visibleModelIds = message.config.visibleModels;
                 }
                 // 从配置读取 dataMasked 状态（持久化存储）
                 if (message.config.dataMasked !== undefined) {
@@ -582,15 +656,375 @@
 
 
             }
-            
+            if (isQuotaSourceSwitching) {
+                if (message.config?.quotaSource !== pendingQuotaSource) {
+                    updateQuotaSourceUI(message.data?.isConnected);
+                    return;
+                }
+                setQuotaSourceSwitching(false);
+            }
             render(message.data, message.config);
             lastSnapshot = message.data; // Update global snapshot
+            updateQuotaSourceUI(message.data?.isConnected);
+        }
+
+        if (message.type === 'autoTriggerState') {
+            if (message.data?.authorization !== undefined) {
+                authorizationStatus = message.data.authorization;
+                authorizedAvailable = Boolean(message.data.authorization?.isAuthorized);
+                updateQuotaAuthUI();
+            }
         }
         
         // 处理公告状态更新
         if (message.type === 'announcementState') {
             handleAnnouncementState(message.data);
         }
+
+        if (message.type === 'quotaSourceError') {
+            if (isQuotaSourceSwitching) {
+                setQuotaSourceSwitching(false);
+                updateQuotaSourceUI(lastSnapshot?.isConnected);
+            }
+            showToast(message.message || (i18n['quotaSource.authorizedMissing'] || 'Authorize auto wake-up first'), 'warning');
+        }
+    }
+
+    function setQuotaSourceSwitching(isSwitching, source) {
+        isQuotaSourceSwitching = isSwitching;
+        if (isSwitching) {
+            pendingQuotaSource = source || pendingQuotaSource;
+            renderLoadingCard(pendingQuotaSource);
+        } else {
+            pendingQuotaSource = null;
+            statusDiv.style.display = 'none';
+        }
+
+        const buttons = document.querySelectorAll('.quota-source-btn');
+        buttons.forEach(btn => {
+            const sourceKey = btn.dataset.source;
+            btn.disabled = isSwitching && sourceKey === pendingQuotaSource;
+        });
+    }
+
+    function requestQuotaSourceChange(source, options = {}) {
+        if (!source) {
+            return;
+        }
+        const force = options.force === true;
+        if (!force) {
+            if (!isQuotaSourceSwitching && source === currentQuotaSource) {
+                return;
+            }
+            if (isQuotaSourceSwitching && source === pendingQuotaSource) {
+                return;
+            }
+        }
+        const command = options.command || 'updateQuotaSource';
+        setQuotaSourceSwitching(true, source);
+        currentQuotaSource = source;
+        updateQuotaSourceUI(lastSnapshot?.isConnected);
+        vscode.postMessage({ command, quotaSource: source });
+    }
+
+    function updateQuotaSourceUI(isConnected) {
+        const statusEl = document.querySelector('.quota-source-status');
+        const buttons = document.querySelectorAll('.quota-source-btn');
+
+        buttons.forEach(btn => {
+            const source = btn.dataset.source;
+            btn.classList.toggle('active', source === currentQuotaSource);
+        });
+
+        if (statusEl) {
+            const authorizedReady = currentQuotaSource !== 'authorized' || authorizedAvailable;
+            const ok = isConnected !== false && authorizedReady;
+            statusEl.dataset.state = ok ? 'ok' : 'error';
+        }
+
+        updateQuotaAuthUI();
+        updateQuotaSourceInfo();
+        updateModelManagerToolbar();
+    }
+
+    function updateQuotaAuthUI() {
+        const card = document.getElementById('quota-auth-card');
+        const row = document.getElementById('quota-auth-row');
+        if (!card || !row) {
+            return;
+        }
+
+        if (currentQuotaSource !== 'authorized') {
+            card.classList.add('hidden');
+            return;
+        }
+
+        card.classList.remove('hidden');
+        const auth = authorizationStatus;
+        if (auth?.isAuthorized) {
+            row.innerHTML = `
+                <div class="quota-auth-info">
+                    <span class="quota-auth-icon">✅</span>
+                    <span class="quota-auth-text">${i18n['autoTrigger.authorized'] || 'Authorized'}</span>
+                    <span class="quota-auth-email">${auth.email || ''}</span>
+                </div>
+                <div class="quota-auth-actions">
+                    <button id="quota-reauth-btn" class="at-btn at-btn-secondary">${i18n['autoTrigger.reauthorizeBtn'] || 'Reauthorize'}</button>
+                    <button id="quota-revoke-btn" class="at-btn at-btn-danger">${i18n['autoTrigger.revokeBtn'] || 'Revoke'}</button>
+                </div>
+            `;
+            document.getElementById('quota-reauth-btn')?.addEventListener('click', () => {
+                vscode.postMessage({ command: 'autoTrigger.authorize' });
+            });
+            document.getElementById('quota-revoke-btn')?.addEventListener('click', () => {
+                document.getElementById('at-revoke-modal')?.classList.remove('hidden');
+            });
+        } else {
+            row.innerHTML = `
+                <div class="quota-auth-info">
+                    <span class="quota-auth-icon">⚠️</span>
+                    <span class="quota-auth-text">${i18n['autoTrigger.unauthorized'] || 'Unauthorized'}</span>
+                </div>
+                <div class="quota-auth-actions">
+                    <button id="quota-auth-btn" class="at-btn at-btn-primary">${i18n['autoTrigger.authorizeBtn'] || 'Authorize'}</button>
+                </div>
+            `;
+            document.getElementById('quota-auth-btn')?.addEventListener('click', () => {
+                vscode.postMessage({ command: 'autoTrigger.authorize' });
+            });
+        }
+    }
+
+    function updateQuotaSourceInfo() {
+        if (!quotaSourceInfo) {
+            return;
+        }
+        if (isQuotaSourceSwitching || !lastSnapshot || !lastSnapshot.isConnected) {
+            quotaSourceInfo.classList.add('hidden');
+            return;
+        }
+        const isAuthorized = currentQuotaSource === 'authorized';
+        const title = isAuthorized
+            ? (i18n['quotaSource.authorizedInfoTitle'] || 'Authorized Monitoring')
+            : (i18n['quotaSource.localInfoTitle'] || 'Local Monitoring');
+        const text = title;
+        quotaSourceInfo.classList.remove('hidden');
+        quotaSourceInfo.classList.toggle('authorized', isAuthorized);
+        quotaSourceInfo.classList.toggle('local', !isAuthorized);
+        quotaSourceInfo.innerHTML = `
+            <div class="quota-source-info-content">
+                <div class="quota-source-info-text">${text}</div>
+            </div>
+        `;
+    }
+
+    function renderLoadingCard(source) {
+        statusDiv.style.display = 'none';
+        dashboard.innerHTML = '';
+
+        if (source === 'authorized') {
+            renderAuthorizedLoadingCard();
+        } else {
+            renderLocalLoadingCard();
+        }
+    }
+
+    function renderLocalLoadingCard() {
+        const card = document.createElement('div');
+        card.className = 'offline-card local-card';
+        card.innerHTML = `
+            <div class="icon offline-spinner"><span class="spinner"></span></div>
+            <h2>${i18n['quotaSource.localLoadingTitle'] || 'Detecting local Antigravity...'}</h2>
+            <p>${i18n['quotaSource.localLoadingDesc'] || 'Keep the Antigravity client running. You can switch to authorized monitoring anytime.'}</p>
+            <div class="offline-actions">
+                <button class="btn-secondary" data-action="switch-authorized">
+                    ${i18n['quotaSource.switchToAuthorized'] || 'Switch to Authorized'}
+                </button>
+            </div>
+        `;
+        dashboard.appendChild(card);
+        const switchBtn = card.querySelector('[data-action="switch-authorized"]');
+        switchBtn?.addEventListener('click', () => {
+            requestQuotaSourceChange('authorized', { force: true });
+        });
+    }
+
+    function renderAuthorizedLoadingCard() {
+        const card = document.createElement('div');
+        card.className = 'offline-card authorized-card';
+        card.innerHTML = `
+            <div class="icon offline-spinner"><span class="spinner"></span></div>
+            <h2>${i18n['quotaSource.authorizedLoadingTitle'] || 'Loading authorized quota...'}</h2>
+            <p>${i18n['quotaSource.authorizedLoadingDesc'] || 'Fetching quota data from the remote API.'}</p>
+            <div class="offline-actions">
+                <button class="btn-secondary" data-action="switch-local">
+                    ${i18n['quotaSource.switchToLocal'] || 'Switch to Local'}
+                </button>
+            </div>
+        `;
+        dashboard.appendChild(card);
+        const switchBtn = card.querySelector('[data-action="switch-local"]');
+        switchBtn?.addEventListener('click', () => {
+            requestQuotaSourceChange('local', { force: true });
+        });
+    }
+
+    function updateModelManagerToolbar() {
+        const recommendedBtn = document.getElementById('model-manager-select-recommended');
+        if (!recommendedBtn) {
+            return;
+        }
+        const isAuthorized = currentQuotaSource === 'authorized';
+        recommendedBtn.classList.toggle('hidden', !isAuthorized);
+    }
+
+    function getAuthorizedRecommendedRank(model) {
+        const label = model?.label || '';
+        const modelId = model?.modelId || '';
+        if (AUTH_RECOMMENDED_ID_RANK.has(modelId)) {
+            return AUTH_RECOMMENDED_ID_RANK.get(modelId);
+        }
+        if (AUTH_RECOMMENDED_LABEL_RANK.has(label)) {
+            return AUTH_RECOMMENDED_LABEL_RANK.get(label);
+        }
+        const normalizedId = normalizeRecommendedKey(modelId);
+        const normalizedLabel = normalizeRecommendedKey(label);
+        return Math.min(
+            AUTH_RECOMMENDED_ID_KEY_RANK.get(normalizedId) ?? Number.MAX_SAFE_INTEGER,
+            AUTH_RECOMMENDED_LABEL_KEY_RANK.get(normalizedLabel) ?? Number.MAX_SAFE_INTEGER
+        );
+    }
+
+    function getAuthorizedRecommendedIds(models) {
+        return models
+            .filter(model => getAuthorizedRecommendedRank(model) < Number.MAX_SAFE_INTEGER)
+            .sort((a, b) => getAuthorizedRecommendedRank(a) - getAuthorizedRecommendedRank(b))
+            .map(model => model.modelId);
+    }
+
+    function openModelManagerModal() {
+        if (!modelManagerModal) {
+            return;
+        }
+
+        modelManagerModels = getModelManagerModels();
+        modelManagerSelection = new Set(getDefaultVisibleModelIds(modelManagerModels));
+        renderModelManagerList();
+        updateModelManagerToolbar();
+        modelManagerModal.classList.remove('hidden');
+    }
+
+    function closeModelManagerModal() {
+        modelManagerModal?.classList.add('hidden');
+    }
+
+    function getModelManagerModels() {
+        const models = lastSnapshot?.allModels || lastSnapshot?.models || [];
+        const sorted = [...models];
+        if (currentQuotaSource === 'authorized') {
+            return sorted.sort((a, b) => {
+                const aRank = getAuthorizedRecommendedRank(a);
+                const bRank = getAuthorizedRecommendedRank(b);
+                if (aRank !== bRank) {
+                    return aRank - bRank;
+                }
+                return (a.label || '').localeCompare(b.label || '');
+            });
+        }
+        return sorted.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+    }
+
+    function getDefaultVisibleModelIds(models) {
+        const allIds = models.map(model => model.modelId);
+        if (Array.isArray(visibleModelIds) && visibleModelIds.length > 0) {
+            return visibleModelIds.filter(id => allIds.includes(id));
+        }
+        if (currentQuotaSource === 'authorized') {
+            const recommendedIds = getAuthorizedRecommendedIds(models).filter(id => allIds.includes(id));
+            if (recommendedIds.length > 0) {
+                return recommendedIds;
+            }
+        }
+        return allIds;
+    }
+
+    function renderModelManagerList() {
+        if (!modelManagerList) {
+            return;
+        }
+
+        if (modelManagerModels.length === 0) {
+            modelManagerList.innerHTML = `<div class="model-manager-empty">${i18n['models.empty'] || 'No models available.'}</div>`;
+            updateModelManagerCount();
+            return;
+        }
+
+        modelManagerList.innerHTML = modelManagerModels.map(model => {
+            const displayName = currentConfig.modelCustomNames?.[model.modelId] || model.label || model.modelId;
+            const checked = modelManagerSelection.has(model.modelId) ? 'checked' : '';
+            return `
+                <label class="model-manager-item">
+                    <input type="checkbox" data-model-id="${model.modelId}" ${checked}>
+                    <span>${displayName}</span>
+                </label>
+            `;
+        }).join('');
+
+        modelManagerList.querySelectorAll('input[type="checkbox"]').forEach(input => {
+            input.addEventListener('change', () => {
+                const modelId = input.getAttribute('data-model-id');
+                if (!modelId) return;
+                if (input.checked) {
+                    modelManagerSelection.add(modelId);
+                } else {
+                    modelManagerSelection.delete(modelId);
+                }
+                updateModelManagerCount();
+            });
+        });
+
+        updateModelManagerCount();
+    }
+
+    function updateModelManagerSelection(mode) {
+        if (mode === 'all') {
+            modelManagerSelection = new Set(modelManagerModels.map(model => model.modelId));
+        } else if (mode === 'recommended') {
+            if (currentQuotaSource !== 'authorized') {
+                return;
+            }
+            modelManagerSelection = new Set(getAuthorizedRecommendedIds(modelManagerModels));
+        } else {
+            modelManagerSelection = new Set();
+        }
+
+        modelManagerList?.querySelectorAll('input[type="checkbox"]').forEach(input => {
+            const modelId = input.getAttribute('data-model-id');
+            input.checked = modelId ? modelManagerSelection.has(modelId) : false;
+        });
+        updateModelManagerCount();
+    }
+
+    function updateModelManagerCount() {
+        if (!modelManagerCount) {
+            return;
+        }
+        const total = modelManagerModels.length;
+        const selected = modelManagerSelection.size;
+        modelManagerCount.textContent = total > 0 ? `${selected}/${total}` : '';
+    }
+
+    function saveModelManagerSelection() {
+        const allIds = modelManagerModels.map(model => model.modelId);
+        const selectedIds = Array.from(modelManagerSelection);
+        const normalized = selectedIds.length === 0 || selectedIds.length === allIds.length
+            ? []
+            : selectedIds;
+        visibleModelIds = normalized;
+        currentConfig.visibleModels = normalized;
+        vscode.postMessage({ command: 'updateVisibleModels', visibleModels: normalized });
+        showToast(i18n['models.saved'] || 'Model visibility updated.', 'success');
+        closeModelManagerModal();
     }
     
     /**
@@ -699,358 +1133,6 @@
         vscode.postMessage({ command: 'openLogs' });
     }
 
-    function renderListView(snapshot, config) {
-        const container = document.createElement('div');
-        container.className = 'list-view-container';
-
-        const table = document.createElement('table');
-        table.className = 'list-view-table';
-        
-        // Define Headers (Responsive classes added in CSS)
-        // Define Headers (Responsive classes added in CSS)
-        const isGrouping = config?.groupingEnabled;
-        const nameHeader = isGrouping ? (i18n['grouping.nameLabel'] || 'Group Name') : (i18n['dashboard.modelName'] || 'Model Name');
-        const modelsHeader = i18n['grouping.models'] || 'Included Models';
-
-        let theadContent = '';
-        if (isGrouping) {
-            theadContent = `
-                <tr>
-                    <th class="col-name">${nameHeader}</th>
-                    <th class="col-models">${modelsHeader}</th>
-                    <th class="col-status-bar">${i18n['dashboard.remainingQuota'] || 'Remaining Quota'}</th>
-                    <th class="col-reset-in">${i18n['dashboard.resetIn'] || 'Reset In'}</th>
-                    <th class="col-reset-time">${i18n['dashboard.resetTime'] || 'Reset Time'}</th>
-                    <th class="col-actions">${i18n['quickpick.actionsSection'] || 'Actions'}</th>
-                </tr>
-            `;
-        } else {
-             // Non-grouping mode: No "Included Models" column
-             theadContent = `
-                <tr>
-                    <th class="col-name">${nameHeader}</th>
-                    <th class="col-status-bar">${i18n['dashboard.remainingQuota'] || 'Remaining Quota'}</th>
-                    <th class="col-reset-in">${i18n['dashboard.resetIn'] || 'Reset In'}</th>
-                    <th class="col-reset-time">${i18n['dashboard.resetTime'] || 'Reset Time'}</th>
-                    <th class="col-actions">${i18n['quickpick.actionsSection'] || 'Actions'}</th>
-                </tr>
-            `;
-        }
-
-        table.innerHTML = `
-            <thead>
-                ${theadContent}
-            </thead>
-            <tbody></tbody>
-        `;
-        const tbody = table.querySelector('tbody');
-
-        // Helper to render a common row (model or group)
-        const renderRowContent = (item, isGroup = false, isChild = false) => {
-            const pct = item.remainingPercentage || 0;
-            const color = getHealthColor(pct);
-            
-            // Determine ID and Name
-            const id = isGroup ? item.groupId : item.modelId;
-            const name = isGroup 
-                ? (config?.groupCustomNames && config.groupCustomNames[id]) || item.groupName 
-                : (config?.modelCustomNames && config.modelCustomNames[id]) || item.label;
-
-            // Pin Status
-            let isPinned = false;
-            if (isGroup) {
-                isPinned = config?.pinnedGroups?.includes(id);
-            } else {
-                isPinned = config?.pinnedModels?.includes(id);
-            }
-            
-            const tr = document.createElement('tr');
-            tr.draggable = true;
-            if (isGroup) {
-                tr.className = 'list-group-row';
-                tr.setAttribute('data-group-id', id);
-            } else {
-                tr.setAttribute('data-id', id);
-            }
-            if (isChild) tr.className = 'list-child-row';
-
-            // Bind Drag & Drop Events
-            tr.addEventListener('dragstart', handleDragStart, false);
-            tr.addEventListener('dragenter', handleDragEnter, false);
-            tr.addEventListener('dragover', handleDragOver, false);
-            tr.addEventListener('dragleave', handleDragLeave, false);
-            tr.addEventListener('drop', handleDrop, false);
-            tr.addEventListener('dragend', handleDragEnd, false);
-
-            // Icon & Caps
-            let iconHtml = '';
-            let capsHtml = '';
-            let tagHtml = '';
-            let recIcon = '';
-
-                if (isGrouping) {
-                    iconHtml = '<span class="icon" style="margin-right:8px">📦</span>';
-                } else {
-                    // Model specific logic
-                    const caps = getModelCapabilityList(item);
-                    if (caps.length > 0) {
-                         const tooltipHtml = encodeURIComponent(generateCapabilityTooltip(caps));
-                         capsHtml = `<div class="list-caps-icons" data-tooltip-html="${tooltipHtml}">✨</div>`;
-                    }
-                    tagHtml = item.tagTitle ? `<span class="list-tag-new">${item.tagTitle}</span>` : '';
-                    // No star icon for regular models in list view as requested
-                    recIcon = ''; 
-                }
-
-            // Columns Content
-            // 1. Name
-            let nameColContent = '';
-            // 2. Included Models
-            let modelsColContent = '';
-            
-            if (isGroup) {
-                // Group: Show Group Name
-                nameColContent = `
-                    <div class="list-model-cell">
-                        <div class="list-model-icon">${iconHtml}</div>
-                        <span class="list-model-name" title="${id}">${name}</span>
-                    </div>
-                `;
-
-                // Models column
-                const childModelsHtml = item.models.map(m => {
-                    const mName = (config?.modelCustomNames && config.modelCustomNames[m.modelId]) || m.label;
-                    
-                    // Recommended logic (class based)
-                    const recClass = m.isRecommended ? ' recommended' : '';
-                    
-                    // Tag
-                    const mTagHtml = m.tagTitle ? `<span class="list-tag-mini">${m.tagTitle}</span>` : '';
-                    
-                    // Capabilities
-                    const mCaps = getModelCapabilityList(m);
-                    let mCapsHtml = '';
-                    let mTooltipAttr = '';
-                    if (mCaps.length > 0) {
-                        const tooltipHtml = encodeURIComponent(generateCapabilityTooltip(mCaps));
-                        mCapsHtml = `<span class="list-caps-dot">✨</span>`;
-                        mTooltipAttr = `data-tooltip-html="${tooltipHtml}"`;
-                    }
-                    
-                    return `
-                        <div class="list-model-pill${recClass}" ${mTooltipAttr} title="${mName}">
-                            <span>${mName}</span>
-                            ${mTagHtml}
-                            ${mCapsHtml}
-                        </div>
-                    `;
-                }).join('');
-
-                modelsColContent = `
-                    <div class="list-inline-models" style="margin-top:0;">
-                        ${childModelsHtml}
-                    </div>
-                `;
-            } else {
-                // Flat Model
-                const caps = getModelCapabilityList(item);
-                const hasCapabilities = caps.length > 0;
-                const tooltipAttr = hasCapabilities ? `data-tooltip-html="${encodeURIComponent(generateCapabilityTooltip(caps))}"` : '';
-                
-                nameColContent = `
-                    <div class="list-model-cell" ${tooltipAttr}>
-                        <span class="list-model-name" title="${id}">${name}</span>
-                        ${tagHtml}
-                        ${capsHtml}
-                    </div>
-                `;
-                // Models column stays empty for standalone
-                modelsColContent = '';
-            }
-
-            const nameCol = nameColContent;
-            const modelsCol = modelsColContent;
-
-            // 2. Status Circle (Empty for children, full for Group/Flat Model)
-            let statusCol = '';
-            if (!isChild) {
-                statusCol = `
-                    <div class="list-progress-circle" style="background: conic-gradient(${color} ${pct}%, var(--border-color) ${pct}%);">
-                        <span class="list-progress-text" style="color: ${color}">${Math.floor(pct)}%</span>
-                    </div>
-                `;
-            } else {
-                statusCol = `<span style="opacity:0.3; font-size:12px;">—</span>`;
-            }
-
-            // 3. Reset In
-            let resetInCol = '';
-            if (!isChild) {
-                resetInCol = `<span class="list-text-secondary">${item.timeUntilResetFormatted || '-'}</span>`;
-            }
-
-            // 4. Reset Time
-            let resetTimeCol = '';
-            if (!isChild) {
-                resetTimeCol = `<span class="list-text-secondary">${item.resetTimeDisplay || '-'}</span>`;
-            }
-
-            // 5. Actions
-            let actionsCol = '';
-            const pinHintText = i18n['dashboard.pinHint'] || 'Pin to Status Bar';
-            const renameHintText = i18n['model.rename'] || 'Rename';
-            if (!isChild) { // Child models in a group usually don't need actions if the group controls them, but rename is useful
-                actionsCol = `
-                    <div class="list-actions-cell">
-                        <button class="rename-btn icon-btn" data-tooltip-html="${encodeURIComponent('<div class=\"rich-tooltip-item\"><span class=\"text\">' + renameHintText + '</span></div>')}">✏️</button>
-                        <label class="switch" style="transform: scale(0.8);" data-tooltip-html="${encodeURIComponent('<div class=\"rich-tooltip-item\"><span class=\"text\">' + pinHintText + '</span></div>')}">
-                            <input type="checkbox" class="pin-toggle" ${isPinned ? 'checked' : ''}>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                `;
-            } else {
-                 // For child models, maybe just rename logic, no pinning (pinned via group)
-                 // But wait, can you pin a specific model from a group? Usually grouping implies moving to group logic.
-                 // Let's keep rename only for children to match requirement "parent... operation and display logic same as card".
-                 // In card mode, children are just text. But rename is useful.
-                 actionsCol = `
-                    <div class="list-actions-cell">
-                         <!-- Optionally allow renaming child models -->
-                         <!-- <button class="rename-ptr icon-btn">✏️</button> -->
-                    </div>
-                 `;
-            }
-
-            if (config?.groupingEnabled) {
-                tr.innerHTML = `
-                    <td>${nameCol}</td>
-                    <td>${modelsCol}</td>
-                    <td class="col-status-bar">${statusCol}</td>
-                    <td class="col-reset-in">${resetInCol}</td>
-                    <td class="col-reset-time">${resetTimeCol}</td>
-                    <td>${actionsCol}</td>
-                `;
-            } else {
-                 tr.innerHTML = `
-                    <td>${nameCol}</td>
-                    <td class="col-status-bar">${statusCol}</td>
-                    <td class="col-reset-in">${resetInCol}</td>
-                    <td class="col-reset-time">${resetTimeCol}</td>
-                    <td>${actionsCol}</td>
-                `;
-            }
-
-            // Bind Events
-            if (!isChild) {
-                // Rename
-                const renameBtn = tr.querySelector('.rename-btn');
-                if (renameBtn) {
-                    renameBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        if (isGroup) {
-                            // Extract model IDs for group rename logic if needed, but passing groupId is enough for openRenameModal usually
-                            // Actually dashboard.js `openRenameModal` takes (groupId, currentName, modelIds)
-                            const ids = item.models ? item.models.map(m => m.modelId) : [];
-                            openRenameModal(item.groupId, name, ids);
-                        } else {
-                            openModelRenameModal(item.modelId, name, item.label);
-                        }
-                    });
-                }
-
-                // Pin
-                const pinToggle = tr.querySelector('.pin-toggle');
-                if (pinToggle) {
-                    pinToggle.addEventListener('change', (e) => {
-                        e.stopPropagation();
-                        if (isGroup) {
-                             // Assuming togglePin supports group logic or we have a command for it
-                             // Check extension.ts or handle message. 
-                             // Wait, dashboard.js togglePin only takes modelId.
-                             // We need to send a specific group command or updated togglePin.
-                             // Based on config 'pinnedGroups', there must be a way. 
-                             // Let's assume 'toggleGroupPin' exists or create it.
-                             vscode.postMessage({ command: 'toggleGroupPin', groupId: item.groupId });
-                        } else {
-                            togglePin(item.modelId);
-                        }
-                    });
-                }
-            }
-
-            return tr;
-        };
-
-
-        // Logic for Grouping vs Flat
-        if (config?.groupingEnabled) {
-            // Render Auto-Group Toolbar (Using same logic as Card View for consistency)
-            const bar = document.createElement('div');
-            bar.className = 'auto-group-toolbar';
-            bar.style.marginBottom = '10px';
-            bar.innerHTML = `
-                <span class="grouping-hint">
-                    ${i18n['grouping.description'] || 'This mode aggregates models sharing the same quota. Supports renaming, sorting, and status bar sync. Click "Manage Groups" to customize, or toggle "Quota Groups" above to switch back.'}
-                </span>
-                <button id="list-manage-group-btn" class="auto-group-link" title="${i18n['customGrouping.title'] || 'Manage Groups'}">
-                    <span class="icon">⚙️</span>
-                    ${i18n['customGrouping.title'] || 'Manage Groups'}
-                </button>
-            `;
-            container.appendChild(bar);
-            
-            const btn = bar.querySelector('#list-manage-group-btn');
-            if (btn) btn.addEventListener('click', openCustomGroupingModal);
-        }
-
-        if (config?.groupingEnabled && snapshot.groups && snapshot.groups.length > 0) {
-            // === Grouped View ===
-            
-            // Sort Groups
-            let groups = [...snapshot.groups];
-            if (config?.groupOrder?.length > 0) {
-                const orderMap = new Map();
-                config.groupOrder.forEach((id, index) => orderMap.set(id, index));
-                groups.sort((a, b) => {
-                    const idxA = orderMap.has(a.groupId) ? orderMap.get(a.groupId) : 99999;
-                    const idxB = orderMap.has(b.groupId) ? orderMap.get(b.groupId) : 99999;
-                    if (idxA !== idxB) return idxA - idxB;
-                    // Lower percentage first
-                    return a.remainingPercentage - b.remainingPercentage;
-                });
-            }
-
-            groups.forEach(group => {
-                // 1. Render Group Parent Row (Now includes children inline)
-                tbody.appendChild(renderRowContent(group, true, false));
-                // No longer render individual child rows based on user request ("ugly")
-            });
-
-        } else {
-            // === Flat View ===
-            
-            let models = [...snapshot.models];
-            if (config?.modelOrder?.length > 0) {
-                const orderMap = new Map();
-                config.modelOrder.forEach((id, index) => orderMap.set(id, index));
-                models.sort((a, b) => {
-                    const idxA = orderMap.has(a.modelId) ? orderMap.get(a.modelId) : 99999;
-                    const idxB = orderMap.has(b.modelId) ? orderMap.get(b.modelId) : 99999;
-                    return idxA - idxB;
-                });
-            }
-
-            models.forEach(model => {
-                tbody.appendChild(renderRowContent(model, false, false));
-            });
-        }
-
-        container.appendChild(table);
-        dashboard.appendChild(container);
-    }
-
-
     window.retryConnection = retryConnection;
     window.openLogs = openLogs;
 
@@ -1141,7 +1223,12 @@
 
         // 检查离线状态
         if (!snapshot.isConnected) {
-            renderOfflineCard(snapshot.errorMessage);
+            const source = config?.quotaSource || currentQuotaSource;
+            if (source === 'authorized') {
+                renderAuthorizedOfflineCard(snapshot.errorMessage);
+            } else {
+                renderLocalOfflineCard(snapshot.errorMessage);
+            }
             return;
         }
 
@@ -1151,13 +1238,6 @@
             renderUserProfile(snapshot.userInfo);
         }
 
-        // ============ LIST VIEW RENDER BRANCH ============
-        if (currentViewMode === 'list') {
-             renderListView(snapshot, config);
-             return;
-        }
-        // =================================================
-        
         // 更新分组按钮状态
         updateToggleGroupingButton(config?.groupingEnabled);
         
@@ -1206,16 +1286,70 @@
         });
     }
 
-    function renderOfflineCard(errorMessage) {
+    function renderLocalOfflineCard(errorMessage) {
+        const message = errorMessage || i18n['dashboard.offlineDesc'] || 'Could not detect Antigravity process. Please ensure Antigravity is running.';
         const card = document.createElement('div');
-        card.className = 'offline-card';
+        card.className = 'offline-card local-card';
         card.innerHTML = `
-            <div class="icon">🚀</div>
-            <h2>${i18n['dashboard.offline'] || 'Systems Offline'}</h2>
-            <p>${errorMessage || i18n['dashboard.offlineDesc'] || 'Could not detect Antigravity process. Please ensure Antigravity is running.'}</p>
-            <p class="offline-hint">${i18n['dashboard.offlineHint'] || 'Use the status bar button to retry connection.'}</p>
+            <div class="icon">🛰️</div>
+            <h2>${i18n['quotaSource.localOfflineTitle'] || 'Local monitoring unavailable'}</h2>
+            <p>${message}</p>
+            <div class="offline-actions">
+                <button class="btn-secondary" data-action="retry-local">
+                    ${i18n['quotaSource.retryLocal'] || (i18n['help.retry'] || 'Retry')}
+                </button>
+                <button class="btn-primary" data-action="switch-authorized">
+                    ${i18n['quotaSource.switchToAuthorized'] || 'Switch to Authorized'}
+                </button>
+            </div>
         `;
         dashboard.appendChild(card);
+        const retryBtn = card.querySelector('[data-action="retry-local"]');
+        const switchBtn = card.querySelector('[data-action="switch-authorized"]');
+        retryBtn?.addEventListener('click', retryConnection);
+        switchBtn?.addEventListener('click', () => {
+            requestQuotaSourceChange('authorized', { force: true });
+        });
+    }
+
+    function renderAuthorizedOfflineCard(errorMessage) {
+        const isAuthorized = Boolean(authorizationStatus?.isAuthorized);
+        const title = isAuthorized
+            ? (i18n['quotaSource.authorizedOfflineTitle'] || 'Authorized monitoring unavailable')
+            : (i18n['quotaSource.authorizedMissingTitle'] || 'Authorization required');
+        const description = isAuthorized
+            ? (i18n['quotaSource.authorizedOfflineDesc'] || 'Failed to fetch quota from the remote API. Please check your network and try again.')
+            : (i18n['quotaSource.authorizedMissingDesc'] || 'Complete authorization to use authorized monitoring.');
+        const detail = errorMessage ? `<p class="offline-detail">${errorMessage}</p>` : '';
+        const card = document.createElement('div');
+        card.className = 'offline-card authorized-card';
+        card.innerHTML = `
+            <div class="icon">🔐</div>
+            <h2>${title}</h2>
+            <p>${description}</p>
+            ${detail}
+            <div class="offline-actions">
+                <button class="btn-secondary" data-action="switch-local">
+                    ${i18n['quotaSource.switchToLocal'] || 'Switch to Local'}
+                </button>
+                <button class="btn-primary" data-action="authorized-primary">
+                    ${isAuthorized ? (i18n['dashboard.refresh'] || 'Refresh') : (i18n['autoTrigger.authorizeBtn'] || 'Authorize')}
+                </button>
+            </div>
+        `;
+        dashboard.appendChild(card);
+        const switchBtn = card.querySelector('[data-action="switch-local"]');
+        const primaryBtn = card.querySelector('[data-action="authorized-primary"]');
+        switchBtn?.addEventListener('click', () => {
+            requestQuotaSourceChange('local', { force: true });
+        });
+        if (isAuthorized) {
+            primaryBtn?.addEventListener('click', handleRefresh);
+        } else {
+            primaryBtn?.addEventListener('click', () => {
+                vscode.postMessage({ command: 'autoTrigger.authorize' });
+            });
+        }
     }
 
     function renderAutoGroupBar() {
@@ -2522,4 +2656,3 @@
     init();
 
 })();
-

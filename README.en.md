@@ -9,7 +9,7 @@ English · [简体中文](README.md)
 
 VS Code extension for monitoring Google Antigravity AI model quotas.
 
-**Features**: Webview Dashboard · QuickPick Mode · Quota Grouping · Auto-Grouping · Rename · Card/List View · Drag-and-Drop Sorting · Status Bar Monitor · Threshold Notifications · Privacy Mode
+**Features**: Webview Dashboard · QuickPick Mode · Quota Grouping · Auto-Grouping · Rename · Card View · Drag-and-Drop Sorting · Status Bar Monitor · Threshold Notifications · Privacy Mode
 
 **Languages**: Follows VS Code language setting, supports 14 languages
 
@@ -27,13 +27,11 @@ Two display modes available, configurable via `agCockpit.displayMode`:
 
 ![Dashboard Overview](assets/dashboard_card_grouped.png)
 
-- **Card View / List View**: Two layouts, switchable in settings panel
+- **Card View**: Card layout for quota overview
 - **Grouping Mode**: Aggregates models by quota pool
 - **Non-Grouping Mode**: Shows individual model quotas
 - **Drag-and-Drop Sorting**: Reorder cards by dragging
 - **Auto-Grouping**: Automatically categorizes models by quota pool
-
-![List View](assets/dashboard_list_view.png)
 
 #### QuickPick Mode
 
@@ -162,7 +160,6 @@ Sends notifications when model quota falls below warning threshold or is exhaust
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `agCockpit.displayMode` | `webview` | Display mode: `webview` / `quickpick` |
-| `agCockpit.viewMode` | `card` | View mode: `card` / `list` |
 | `agCockpit.refreshInterval` | `120` | Refresh interval (seconds, 10-3600) |
 | `agCockpit.statusBarFormat` | `standard` | Status bar format |
 | `agCockpit.groupingEnabled` | `true` | Enable grouping mode |

@@ -9,6 +9,7 @@ import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';
 import { QuotaSnapshot } from '../shared/types';
 import { QUOTA_THRESHOLDS, TIMING } from '../shared/constants';
+import { credentialStorage } from '../auto_trigger';
 
 export class TelemetryController {
     private notifiedModels: Set<string> = new Set();
@@ -66,12 +67,16 @@ export class TelemetryController {
                 }
             }
 
+            const authorizationStatus = await credentialStorage.getAuthorizationStatus();
+            const authorizedAvailable = authorizationStatus.isAuthorized;
+
             // 更新 Dashboard（使用可能已更新的 config）
             this.hud.refreshView(snapshot, {
                 showPromptCredits: config.showPromptCredits,
                 pinnedModels: config.pinnedModels,
                 modelOrder: config.modelOrder,
                 modelCustomNames: config.modelCustomNames,
+                visibleModels: config.visibleModels,
                 groupingEnabled: config.groupingEnabled,
                 groupCustomNames: config.groupingCustomNames,
                 groupingShowInStatusBar: config.groupingShowInStatusBar,
@@ -84,7 +89,9 @@ export class TelemetryController {
                 lastSuccessfulUpdate: this.lastSuccessfulUpdate,
                 statusBarFormat: config.statusBarFormat,
                 profileHidden: config.profileHidden,
-                viewMode: config.viewMode,
+                quotaSource: config.quotaSource,
+                authorizedAvailable,
+                authorizationStatus,
                 displayMode: config.displayMode,
                 dataMasked: config.dataMasked,
                 groupMappings: config.groupMappings,
@@ -98,7 +105,9 @@ export class TelemetryController {
         });
 
         this.reactor.onMalfunction(async (err: Error) => {
-            logger.error(`Reactor Malfunction: ${err.message}`);
+            const source = (err as Error & { source?: string }).source;
+            const sourceInfo = source ? ` (source=${source})` : '';
+            logger.error(`Reactor Malfunction${sourceInfo}: ${err.message}`);
 
             // 如果是连接被拒绝（ECONNREFUSED），说明端口可能变了，或者信号中断/损坏，直接重新扫描
             if (err.message.includes('ECONNREFUSED') || 

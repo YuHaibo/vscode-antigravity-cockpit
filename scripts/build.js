@@ -83,7 +83,6 @@ async function build() {
         fs.mkdirSync(webviewDir, { recursive: true });
     }
     fs.copyFileSync('./src/view/webview/dashboard.css', './out/view/webview/dashboard.css');
-    fs.copyFileSync('./src/view/webview/list_view.css', './out/view/webview/list_view.css');
     fs.copyFileSync('./src/view/webview/auto_trigger.css', './out/view/webview/auto_trigger.css');
 }
 

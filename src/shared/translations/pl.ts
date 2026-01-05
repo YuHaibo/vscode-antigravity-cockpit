@@ -137,6 +137,15 @@ export const pl = {
     'model.namePlaceholder': 'Wpisz nazwę...',
     'model.ok': 'OK',
     'model.reset': 'Resetuj',
+    'models.manage': 'Zarządzaj modelami',
+    'models.manageTitle': 'Zarządzaj widocznymi modelami',
+    'models.hint': 'Wybierz modele do wyświetlenia',
+    'models.selectAll': 'Zaznacz wszystko',
+    'models.clearAll': 'Wyczyść',
+    'models.selectRecommended': 'Polecane',
+    'models.save': 'Zapisz wybór',
+    'models.saved': 'Widoczność modeli zaktualizowana.',
+    'models.empty': 'Brak dostępnych modeli.',
 
     // Format Paska Stanu
     'statusBarFormat.title': 'Styl Paska Stanu',
@@ -216,17 +225,20 @@ export const pl = {
     'capability.tools': 'Narzędzia',
     'capability.recommended': 'Zalecany Model',
 
-    // View Mode
     'dashboard.modelName': 'Nazwa Modelu',
     'dashboard.name': 'Nazwa',
     'dashboard.remainingQuota': 'Pozostały Limit',
     'grouping.nameLabel': 'Nazwa Grupy',
-    'viewMode.title': 'Tryb Widoku',
-    'viewMode.card': 'Widok Kart',
-    'viewMode.list': 'Widok Listy',
     'displayMode.title': 'Tryb Wyświetlania',
     'displayMode.webview': 'Panel (Webview)',
     'displayMode.quickpick': 'Tryb QuickPick',
+    'quotaSource.title': 'Źródło limitu',
+    'quotaSource.local': 'Lokalne',
+    'quotaSource.authorized': 'Autoryzowane',
+    'quotaSource.authorizedMissing': 'Najpierw zakończ autoryzację wybudzania.',
+    'quotaSource.localInfoTitle': 'Odczytuje limit z lokalnego procesu Antigravity. Bardziej stabilne, ale wymaga uruchomionego klienta.',
+    'quotaSource.localInfoDesc': '→ Kliknij, aby przełączyć na monitorowanie autoryzowane',
+    'quotaSource.authorizedInfoTitle': 'Pobiera limit przez autoryzowane zdalne API. Niezależne od procesu lokalnego, idealne do użycia bez klienta Antigravity lub jako przekaźnik API.',
 
     // Footer
     'footer.enjoyingThis': 'Podoba się? Daj nam ⭐!',

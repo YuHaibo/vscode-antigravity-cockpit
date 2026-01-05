@@ -17,6 +17,8 @@ const ANTIGRAVITY_METADATA = {
     pluginType: 'GEMINI',
 };
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const RESET_TRIGGER_COOLDOWN_MS = 10 * 60 * 1000;
+const MAX_TRIGGER_CONCURRENCY = 4;
 
 /**
  * 触发服务
@@ -28,9 +30,14 @@ class TriggerService {
     private readonly maxDays = 7;      // 最多保留 7 天
     private readonly storageKey = 'triggerHistory';
     private readonly resetTriggerKey = 'lastResetTriggerTimestamps';
+    private readonly resetTriggerAtKey = 'lastResetTriggerAt';
     
     /** 记录每个模型上次触发时对应的 resetAt，防止重复触发 */
     private lastResetTriggerTimestamps: Map<string, string> = new Map();
+    /** 记录每个模型上次触发时间（用于冷却） */
+    private lastResetTriggerAt: Map<string, number> = new Map();
+    /** 记录每个模型上次 remaining，用于检测满额上升沿 */
+    private lastResetRemaining: Map<string, number> = new Map();
 
     /**
      * 初始化：从存储加载历史记录
@@ -38,6 +45,7 @@ class TriggerService {
     initialize(): void {
         this.loadHistory();
         this.loadResetTriggerTimestamps();
+        this.loadResetTriggerAt();
     }
     
     /**
@@ -56,6 +64,25 @@ class TriggerService {
         const obj = Object.fromEntries(this.lastResetTriggerTimestamps);
         credentialStorage.saveState(this.resetTriggerKey, obj);
     }
+
+    /**
+     * 加载重置触发时间记录（冷却）
+     */
+    private loadResetTriggerAt(): void {
+        const saved = credentialStorage.getState<Record<string, number>>(this.resetTriggerAtKey, {});
+        this.lastResetTriggerAt = new Map(
+            Object.entries(saved).map(([key, value]) => [key, Number(value)]),
+        );
+        logger.debug(`[TriggerService] Loaded ${this.lastResetTriggerAt.size} reset trigger timestamps (cooldown)`);
+    }
+
+    /**
+     * 保存重置触发时间记录（冷却）
+     */
+    private saveResetTriggerAt(): void {
+        const obj = Object.fromEntries(this.lastResetTriggerAt);
+        credentialStorage.saveState(this.resetTriggerAtKey, obj);
+    }
     
     /**
      * 检查是否应该在配额重置时触发唤醒
@@ -66,23 +93,56 @@ class TriggerService {
      * @returns true 如果应该触发
      */
     shouldTriggerOnReset(modelId: string, resetAt: string, remaining: number, limit: number): boolean {
+        const lastRemaining = this.lastResetRemaining.get(modelId);
+        const isFull = remaining >= limit;
+
         // 只有满额时才考虑触发
-        if (remaining < limit) {
+        if (!isFull) {
+            this.lastResetRemaining.set(modelId, remaining);
             logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} not full (${remaining}/${limit})`);
             return false;
         }
-        
+
         const lastTriggeredResetAt = this.lastResetTriggerTimestamps.get(modelId);
         logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} lastTriggeredResetAt=${lastTriggeredResetAt}, current resetAt=${resetAt}`);
-        
-        // 如果 resetAt 变化了（新的重置周期），则应该触发
-        if (resetAt !== lastTriggeredResetAt) {
-            logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} resetAt changed, should trigger`);
+
+        const lastTriggerAt = this.lastResetTriggerAt.get(modelId);
+        if (lastTriggerAt !== undefined && Date.now() - lastTriggerAt < RESET_TRIGGER_COOLDOWN_MS) {
+            this.lastResetRemaining.set(modelId, remaining);
+            logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} cooldown active, skip`);
+            return false;
+        }
+
+        // 启动首次观察到满额时，允许补触发一次
+        if (lastRemaining === undefined) {
+            if (resetAt === lastTriggeredResetAt) {
+                this.lastResetRemaining.set(modelId, remaining);
+                logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} startup full but resetAt same, skip`);
+                return false;
+            }
+            this.lastResetRemaining.set(modelId, remaining);
+            logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} startup full, allow once`);
             return true;
         }
-        
-        logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} resetAt same, skip`);
-        return false;
+
+        const wasBelowLimit = lastRemaining < limit;
+        const isRisingEdge = wasBelowLimit && isFull;
+        if (!isRisingEdge) {
+            this.lastResetRemaining.set(modelId, remaining);
+            logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} not rising edge (last=${lastRemaining}, current=${remaining})`);
+            return false;
+        }
+
+        // 如果 resetAt 变化了（新的重置周期），则应该触发
+        if (resetAt === lastTriggeredResetAt) {
+            this.lastResetRemaining.set(modelId, remaining);
+            logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} resetAt same, skip`);
+            return false;
+        }
+
+        this.lastResetRemaining.set(modelId, remaining);
+        logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} resetAt changed, rising edge, should trigger`);
+        return true;
     }
     
     /**
@@ -91,6 +151,8 @@ class TriggerService {
     markResetTriggered(modelId: string, resetAt: string): void {
         this.lastResetTriggerTimestamps.set(modelId, resetAt);
         this.saveResetTriggerTimestamps();
+        this.lastResetTriggerAt.set(modelId, Date.now());
+        this.saveResetTriggerAt();
         logger.info(`[TriggerService] Marked reset triggered for ${modelId} at ${resetAt}`);
     }
 
@@ -141,45 +203,100 @@ class TriggerService {
         const startTime = Date.now();
         const triggerModels = (models && models.length > 0) ? models : ['gemini-3-flash'];
         const promptText = customPrompt || 'hi';  // 使用自定义或默认唤醒词
+        let stage = 'start';
         
         logger.info(`[TriggerService] Starting trigger (${triggerType}) for models: ${triggerModels.join(', ')}, prompt: "${promptText}"...`);
 
         try {
             // 1. 获取有效的 access_token
+            stage = 'get_access_token';
             const accessToken = await oauthService.getValidAccessToken();
             if (!accessToken) {
                 throw new Error('No valid access token. Please authorize first.');
             }
 
             // 2. 获取 project_id
+            stage = 'get_project_id';
             const credential = await credentialStorage.getCredential();
             const projectId = credential?.projectId || await this.fetchProjectId(accessToken);
 
             // 3. 发送触发请求
-            const results = [];
-            
-            for (const model of triggerModels) {
-                const reply = await this.sendTriggerRequest(accessToken, projectId, model, promptText);
-                results.push(`${model}: ${reply}`);
-            }
+            const results: Array<{
+                model: string;
+                ok: boolean;
+                message: string;
+                duration: number;
+            }> = new Array(triggerModels.length);
+            let nextIndex = 0;
+
+            const worker = async () => {
+                while (true) {
+                    const currentIndex = nextIndex++;
+                    if (currentIndex >= triggerModels.length) {
+                        return;
+                    }
+                    const model = triggerModels[currentIndex];
+                    const started = Date.now();
+                    try {
+                        stage = `send_trigger_request:${model}`;
+                        const reply = await this.sendTriggerRequest(accessToken, projectId, model, promptText);
+                        results[currentIndex] = {
+                            model,
+                            ok: true,
+                            message: reply,
+                            duration: Date.now() - started,
+                        };
+                    } catch (error) {
+                        const err = error instanceof Error ? error : new Error(String(error));
+                        results[currentIndex] = {
+                            model,
+                            ok: false,
+                            message: err.message,
+                            duration: Date.now() - started,
+                        };
+                    }
+                }
+            };
+
+            const workerCount = Math.min(MAX_TRIGGER_CONCURRENCY, triggerModels.length);
+            await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+            const successLines = results
+                .filter(result => result.ok)
+                .map(result => `${result.model}: ${result.message} (${result.duration}ms)`);
+            const failureLines = results
+                .filter(result => !result.ok)
+                .map(result => `${result.model}: ERROR ${result.message} (${result.duration}ms)`);
+            const summary = [...successLines, ...failureLines].join('\n');
+            const successCount = successLines.length;
+            const failureCount = failureLines.length;
+            const hasSuccess = successCount > 0;
 
             // 4. 记录成功
             const record: TriggerRecord = {
                 timestamp: new Date().toISOString(),
-                success: true,
+                success: hasSuccess,
                 prompt: `[${triggerModels.join(', ')}] ${promptText}`,
-                message: results.join('\n'),
+                message: summary,
                 duration: Date.now() - startTime,
                 triggerType: triggerType,
                 triggerSource: triggerSource || (triggerType === 'manual' ? 'manual' : undefined),
             };
 
             this.addRecord(record);
-            logger.info(`[TriggerService] Trigger successful in ${record.duration}ms`);
+            if (hasSuccess && failureCount === 0) {
+                logger.info(`[TriggerService] Trigger successful in ${record.duration}ms`);
+            } else if (hasSuccess) {
+                logger.warn(`[TriggerService] Trigger completed with partial failures (success=${successCount}, failed=${failureCount}) in ${record.duration}ms`);
+            } else {
+                logger.error(`[TriggerService] Trigger failed for all models (count=${failureCount}) in ${record.duration}ms`);
+            }
             return record;
 
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
+            const sourceLabel = triggerSource ?? triggerType;
+            logger.error(`[TriggerService] Trigger failed (stage=${stage}, source=${sourceLabel}, models=${triggerModels.join(', ')}): ${err.message}`);
             
             // 记录失败
             const record: TriggerRecord = {
@@ -339,20 +456,28 @@ class TriggerService {
             },
         };
 
-        const response = await fetch(`${ANTIGRAVITY_API_URL}/v1internal:generateContent`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'User-Agent': ANTIGRAVITY_USER_AGENT,
-                'Content-Type': 'application/json',
-                'Accept-Encoding': 'gzip',
-            },
-            body: JSON.stringify(requestBody),
-        });
+        const url = `${ANTIGRAVITY_API_URL}/v1internal:generateContent`;
+        let response: Response;
+        try {
+            response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'User-Agent': ANTIGRAVITY_USER_AGENT,
+                    'Content-Type': 'application/json',
+                    'Accept-Encoding': 'gzip',
+                },
+                body: JSON.stringify(requestBody),
+            });
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error(`[TriggerService] sendTriggerRequest failed (url=${url}, model=${model}, requestId=${requestId}): ${err.message}`);
+            throw err;
+        }
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`API request failed: ${response.status} - ${errorText.substring(0, 100)}`);
+            throw new Error(`API request failed (${url}): ${response.status} - ${errorText.substring(0, 100)}`);
         }
 
         const text = await response.text();

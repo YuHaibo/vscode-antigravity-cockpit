@@ -137,6 +137,15 @@ export const ja = {
     'model.namePlaceholder': '名前を入力...',
     'model.ok': '確定',
     'model.reset': 'リセット',
+    'models.manage': 'モデル管理',
+    'models.manageTitle': '表示モデルの管理',
+    'models.hint': '表示するモデルを選択',
+    'models.selectAll': 'すべて選択',
+    'models.clearAll': 'クリア',
+    'models.selectRecommended': 'おすすめ',
+    'models.save': '選択を保存',
+    'models.saved': 'モデル表示を更新しました。',
+    'models.empty': '利用可能なモデルがありません。',
 
     // ステータスバー形式
     'statusBarFormat.title': 'ステータスバースタイル',
@@ -216,17 +225,20 @@ export const ja = {
     'capability.tools': 'ツール',
     'capability.recommended': '推奨モデル',
 
-    // View Mode
     'dashboard.modelName': 'モデル名',
     'dashboard.name': '名前',
     'dashboard.remainingQuota': '残りクォータ',
     'grouping.nameLabel': 'グループ名',
-    'viewMode.title': '表示モード',
-    'viewMode.card': 'カードビュー',
-    'viewMode.list': 'リストビュー',
     'displayMode.title': '表示モード',
     'displayMode.webview': 'ダッシュボード (Webview)',
     'displayMode.quickpick': 'QuickPickモード',
+    'quotaSource.title': 'クォータソース',
+    'quotaSource.local': 'ローカル',
+    'quotaSource.authorized': '認可',
+    'quotaSource.authorizedMissing': '先に起動の認可を完了してください。',
+    'quotaSource.localInfoTitle': 'ローカルの Antigravity クライアントプロセスから配額を取得します。安定性は高いですが、クライアントの起動が必要です。',
+    'quotaSource.localInfoDesc': '→',
+    'quotaSource.authorizedInfoTitle': '認可した遠端 API から配額を取得します。ローカルプロセスに依存せず、API 中継や Antigravity クライアント不要の用途に適しています。',
 
     // Footer
     'footer.enjoyingThis': 'お気に入りですか？⭐をお願いします！',

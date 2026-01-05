@@ -403,7 +403,6 @@ function getUserContext(): { id?: string; session_id?: string } | undefined {
 function getAppContext(): {
     refresh_interval_sec: number;
     display_mode: string;
-    view_mode: string;
     grouping_enabled: boolean;
     grouping_show_in_status_bar: boolean;
     notification_enabled: boolean;
@@ -419,7 +418,6 @@ function getAppContext(): {
         return {
             refresh_interval_sec: config.refreshInterval,
             display_mode: config.displayMode,
-            view_mode: config.viewMode,
             grouping_enabled: config.groupingEnabled,
             grouping_show_in_status_bar: config.groupingShowInStatusBar,
             notification_enabled: config.notificationEnabled,

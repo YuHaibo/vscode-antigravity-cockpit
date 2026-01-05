@@ -37,6 +37,8 @@ export interface ModelQuotaInfo {
     timeUntilResetFormatted: string;
     /** 格式化的重置时间显示 */
     resetTimeDisplay: string;
+    /** 重置时间是否可信 */
+    resetTimeValid?: boolean;
     /** 是否支持图片输入 */
     supportsImages?: boolean;
     /** 是否为推荐模型 */
@@ -77,6 +79,8 @@ export interface QuotaSnapshot {
     userInfo?: UserInfo;
     /** 模型列表 */
     models: ModelQuotaInfo[];
+    /** 原始模型列表（未过滤） */
+    allModels?: ModelQuotaInfo[];
     /** 配额分组 (开启分组功能时生成) */
     groups?: QuotaGroup[];
     /** 连接状态 */
@@ -321,7 +325,9 @@ export type WebviewMessageType =
     | 'renameModel'
     | 'updateStatusBarFormat'
     | 'toggleProfile'
-    | 'updateViewMode'
+    | 'updateQuotaSource'
+    | 'quotaSourceGuideComplete'
+    | 'quotaSourceGuideDismiss'
     | 'updateDisplayMode'
     | 'updateDataMasked'
     | 'openCustomGrouping'
@@ -345,7 +351,8 @@ export type WebviewMessageType =
     | 'announcement.markAllAsRead'
     // General
     | 'openUrl'
-    | 'executeCommand';
+    | 'executeCommand'
+    | 'updateVisibleModels';
 
 /** Webview 消息 */
 export interface WebviewMessage {
@@ -368,8 +375,8 @@ export interface WebviewMessage {
     criticalThreshold?: number;
     /** 状态栏显示格式 (updateStatusBarFormat) */
     statusBarFormat?: string;
-    /** 视图模式 (updateViewMode) */
-    viewMode?: string;
+    /** 配额来源 (updateQuotaSource) */
+    quotaSource?: 'local' | 'authorized';
     /** 显示模式 (updateDisplayMode) */
     displayMode?: 'webview' | 'quickpick';
     /** 数据遮罩状态 (updateDataMasked) */
@@ -378,6 +385,8 @@ export interface WebviewMessage {
     customGroupMappings?: Record<string, string>;
     /** 自定义分组名称 (saveCustomGrouping) */
     customGroupNames?: Record<string, string>;
+    /** 可见模型列表 */
+    visibleModels?: string[];
     // Auto Trigger
     /** Tab 名称 (tabChanged) */
     tab?: string;
@@ -412,6 +421,13 @@ export interface ScheduleConfig {
     selectedModels: string[];
 }
 
+/** Dashboard 授权状态 */
+export interface DashboardAuthorizationStatus {
+    isAuthorized: boolean;
+    email?: string;
+    expiresAt?: string;
+}
+
 /** Dashboard 配置 */
 export interface DashboardConfig {
     /** 是否显示 Prompt Credits */
@@ -422,6 +438,8 @@ export interface DashboardConfig {
     modelOrder: string[];
     /** 模型自定义名称映射 (modelId -> displayName) */
     modelCustomNames?: Record<string, string>;
+    /** 可见模型列表（为空时显示全部） */
+    visibleModels?: string[];
     /** 是否启用分组显示 */
     groupingEnabled: boolean;
     /** 分组自定义名称映射 (modelId -> groupName) */
@@ -446,8 +464,12 @@ export interface DashboardConfig {
     statusBarFormat?: string;
     /** 是否隐藏计划详情面板 */
     profileHidden?: boolean;
-    /** 视图模式 (card | list) */
-    viewMode?: string;
+    /** 配额来源 (local | authorized) */
+    quotaSource?: string;
+    /** 是否已完成授权 */
+    authorizedAvailable?: boolean;
+    /** 授权状态详情 */
+    authorizationStatus?: DashboardAuthorizationStatus;
     /** 显示模式 (webview | quickpick) */
     displayMode?: string;
     /** 是否遮罩敏感数据 */

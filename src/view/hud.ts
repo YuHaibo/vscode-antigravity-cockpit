@@ -106,6 +106,7 @@ export class CockpitHUD {
                 pinnedModels: config.pinnedModels,
                 modelOrder: config.modelOrder,
                 modelCustomNames: config.modelCustomNames,
+                visibleModels: config.visibleModels,
                 groupingEnabled: config.groupingEnabled,
                 groupCustomNames: config.groupingCustomNames,
                 groupingShowInStatusBar: config.groupingShowInStatusBar,
@@ -117,7 +118,8 @@ export class CockpitHUD {
                 criticalThreshold: config.criticalThreshold,
                 statusBarFormat: config.statusBarFormat,
                 profileHidden: config.profileHidden,
-                viewMode: config.viewMode,
+                quotaSource: config.quotaSource,
+                authorizedAvailable: false,
                 displayMode: config.displayMode,
                 dataMasked: config.dataMasked,
                 groupMappings: config.groupMappings,
@@ -233,6 +235,18 @@ export class CockpitHUD {
                 tagTitle: m.tagTitle,
                 supportedMimeTypes: m.supportedMimeTypes,
             })),
+            allModels: snapshot.allModels?.map(m => ({
+                label: m.label,
+                modelId: m.modelId,
+                remainingPercentage: m.remainingPercentage,
+                isExhausted: m.isExhausted,
+                timeUntilResetFormatted: m.timeUntilResetFormatted,
+                resetTimeDisplay: m.resetTimeDisplay,
+                supportsImages: m.supportsImages,
+                isRecommended: m.isRecommended,
+                tagTitle: m.tagTitle,
+                supportedMimeTypes: m.supportedMimeTypes,
+            })),
             groups: snapshot.groups?.map(g => ({
                 groupId: g.groupId,
                 groupName: g.groupName,
@@ -289,7 +303,6 @@ export class CockpitHUD {
     private generateHtml(webview: vscode.Webview): string {
         // 获取外部资源 URI
         const styleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'dashboard.css');
-        const listStyleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'list_view.css');
         const autoTriggerStyleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'auto_trigger.css');
         const scriptUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'dashboard.js');
         const autoTriggerScriptUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'auto_trigger.js');
@@ -330,7 +343,6 @@ export class CockpitHUD {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src https: data:;">
     <title>${t('dashboard.title')}</title>
     <link rel="stylesheet" href="${styleUri}">
-    <link rel="stylesheet" href="${listStyleUri}">
     <link rel="stylesheet" href="${autoTriggerStyleUri}">
 </head>
 <body>
@@ -340,11 +352,14 @@ export class CockpitHUD {
             <span>${t('dashboard.title')}</span>
         </div>
         <div class="controls">
-            <button id="refresh-btn" class="refresh-btn" title="Manual Refresh (60s Cooldown)">
+            <button id="refresh-btn" class="refresh-btn" title="Manual Refresh (10s Cooldown)">
                 ${t('dashboard.refresh')}
             </button>
             <button id="reset-order-btn" class="refresh-btn" title="Reset to default order">
                 ${t('dashboard.resetOrder')}
+            </button>
+            <button id="manage-models-btn" class="refresh-btn" title="${t('models.manageTitle')}">
+                ${t('models.manage')}
             </button>
             <button id="toggle-grouping-btn" class="refresh-btn" title="${t('grouping.toggleHint')}">
                 ${t('grouping.title')}
@@ -367,6 +382,16 @@ export class CockpitHUD {
         <button class="tab-btn" data-tab="auto-trigger">
             ${t('autoTrigger.tabTitle')} <span id="at-tab-status-dot" class="status-dot hidden">●</span>
         </button>
+        <div id="quota-source-info" class="quota-source-info hidden"></div>
+        <div class="tab-spacer"></div>
+        <div class="quota-source-toggle">
+            <span class="quota-source-label">${t('quotaSource.title')}</span>
+            <div class="quota-source-buttons">
+                <button type="button" class="quota-source-btn" data-source="local">${t('quotaSource.local')}</button>
+                <button type="button" class="quota-source-btn" data-source="authorized">${t('quotaSource.authorized')}</button>
+            </div>
+            <span class="quota-source-status" data-state="ok" title="${t('quotaSource.title')}"></span>
+        </div>
     </nav>
 
     <!-- Quota Tab Content -->
@@ -374,6 +399,10 @@ export class CockpitHUD {
         <div id="status" class="status-connecting">
             <span class="spinner"></span>
             <span>${t('dashboard.connecting')}</span>
+        </div>
+
+        <div id="quota-auth-card" class="quota-auth-card hidden">
+            <div id="quota-auth-row" class="quota-auth-row"></div>
         </div>
 
         <div id="dashboard">
@@ -643,6 +672,32 @@ export class CockpitHUD {
         </div>
     </div>
 
+
+
+    <!-- Model Manager Modal -->
+    <div id="model-manager-modal" class="modal hidden">
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3>🧩 ${t('models.manageTitle')}</h3>
+                <button id="model-manager-close" class="close-btn">×</button>
+            </div>
+            <div class="modal-body model-manager-body">
+                <div class="model-manager-hint">${t('models.hint')}</div>
+                <div class="model-manager-toolbar">
+                    <button id="model-manager-select-all" class="btn-secondary">${t('models.selectAll')}</button>
+                    <button id="model-manager-clear" class="btn-secondary">${t('models.clearAll')}</button>
+                    <button id="model-manager-select-recommended" class="btn-secondary hidden">${t('models.selectRecommended')}</button>
+                    <span id="model-manager-count" class="model-manager-count"></span>
+                </div>
+                <div id="model-manager-list" class="model-manager-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="model-manager-cancel" class="btn-secondary">${t('customGrouping.cancel') || '取消'}</button>
+                <button id="model-manager-save" class="btn-primary">${t('models.save')}</button>
+            </div>
+        </div>
+    </div>
+
     <div id="settings-modal" class="modal hidden">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
@@ -694,15 +749,6 @@ export class CockpitHUD {
                 </div>
 
                 <hr class="setting-divider">
-
-                <!-- 视图模式选择 -->
-                <div class="setting-item">
-                    <label for="view-mode-select">🎴 ${t('viewMode.title')}</label>
-                    <select id="view-mode-select" class="setting-select">
-                        <option value="card">🎴 ${t('viewMode.card')}</option>
-                        <option value="list">☰ ${t('viewMode.list')}</option>
-                    </select>
-                </div>
 
                 <!-- 显示模式切换 -->
                 <div class="setting-item">

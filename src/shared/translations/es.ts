@@ -137,6 +137,15 @@ export const es = {
     'model.namePlaceholder': 'Ingrese nombre...',
     'model.ok': 'Aceptar',
     'model.reset': 'Restablecer',
+    'models.manage': 'Gestionar modelos',
+    'models.manageTitle': 'Gestionar modelos visibles',
+    'models.hint': 'Selecciona los modelos a mostrar',
+    'models.selectAll': 'Seleccionar todo',
+    'models.clearAll': 'Limpiar',
+    'models.selectRecommended': 'Recomendados',
+    'models.save': 'Guardar selección',
+    'models.saved': 'Visibilidad de modelos actualizada.',
+    'models.empty': 'No hay modelos disponibles.',
 
     // Formato de Barra de Estado
     'statusBarFormat.title': 'Estilo de Barra de Estado',
@@ -216,17 +225,20 @@ export const es = {
     'capability.tools': 'Herramientas',
     'capability.recommended': 'Modelo Recomendado',
 
-    // View Mode
     'dashboard.modelName': 'Nombre del Modelo',
     'dashboard.name': 'Nombre',
     'dashboard.remainingQuota': 'Cuota Restante',
     'grouping.nameLabel': 'Nombre del Grupo',
-    'viewMode.title': 'Modo de Vista',
-    'viewMode.card': 'Vista de Tarjetas',
-    'viewMode.list': 'Vista de Lista',
     'displayMode.title': 'Modo de Visualización',
     'displayMode.webview': 'Panel (Webview)',
     'displayMode.quickpick': 'Modo QuickPick',
+    'quotaSource.title': 'Fuente de cuota',
+    'quotaSource.local': 'Local',
+    'quotaSource.authorized': 'Autorizado',
+    'quotaSource.authorizedMissing': 'Completa primero la autorización de activación.',
+    'quotaSource.localInfoTitle': 'Lee la cuota del proceso local de Antigravity. Más estable, pero requiere que el cliente esté en ejecución.',
+    'quotaSource.localInfoDesc': '→ Haz clic para cambiar al monitoreo autorizado',
+    'quotaSource.authorizedInfoTitle': 'Obtiene la cuota mediante APIs remotas autorizadas. No depende del proceso local y es ideal para relé API o uso sin el cliente de Antigravity.',
 
     // Footer
     'footer.enjoyingThis': '¿Te gusta? ¡Danos una ⭐!',

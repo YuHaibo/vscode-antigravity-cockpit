@@ -137,6 +137,15 @@ export const zhTW = {
     'model.namePlaceholder': '輸入名稱...',
     'model.ok': '確定',
     'model.reset': '重置',
+    'models.manage': '管理模型',
+    'models.manageTitle': '管理顯示模型',
+    'models.hint': '選擇要顯示的模型',
+    'models.selectAll': '全選',
+    'models.clearAll': '清空',
+    'models.selectRecommended': '推薦模型',
+    'models.save': '儲存選擇',
+    'models.saved': '已更新模型顯示',
+    'models.empty': '暫無可用模型',
 
     // 狀態列格式
     'statusBarFormat.title': '狀態列樣式',
@@ -216,17 +225,20 @@ export const zhTW = {
     'capability.tools': '工具',
     'capability.recommended': '推薦模型：效能與價格的最佳平衡',
 
-    // View Mode
     'dashboard.modelName': '模型名稱',
     'dashboard.name': '名稱',
     'dashboard.remainingQuota': '剩餘配額',
     'grouping.nameLabel': '分組名稱',
-    'viewMode.title': '檢視模式',
-    'viewMode.card': '卡片檢視',
-    'viewMode.list': '列表檢視',
     'displayMode.title': '顯示模式',
     'displayMode.webview': '儀表板 (Webview)',
     'displayMode.quickpick': '快捷模式 (QuickPick)',
+    'quotaSource.title': '配額來源',
+    'quotaSource.local': '本地',
+    'quotaSource.authorized': '授權',
+    'quotaSource.authorizedMissing': '請先完成喚醒授權。',
+    'quotaSource.localInfoTitle': '監聽本地 Antigravity 客戶端進程取得配額，更穩定，需保持客戶端運行，適用於客戶端使用情境。',
+    'quotaSource.localInfoDesc': '→',
+    'quotaSource.authorizedInfoTitle': '透過授權存取遠端介面取得配額，不依賴本地進程，適用於 API 中轉或無需啟動 Antigravity 客戶端的情境。',
 
     // Footer
     'footer.enjoyingThis': '覺得好用？給個 ⭐ 支持一下！',

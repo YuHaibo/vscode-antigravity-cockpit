@@ -151,5 +151,86 @@ export class CommandController {
                 }
             }),
         );
+
+        // [调试命令] 仅在开发模式下可用
+        if (this.context.extensionMode === vscode.ExtensionMode.Development) {
+            this.registerDebugCommands();
+        }
+    }
+
+    /**
+     * 注册调试命令（仅开发模式）
+     */
+    private registerDebugCommands(): void {
+        // 重置扩展状态到初始安装状态
+        this.context.subscriptions.push(
+            vscode.commands.registerCommand('agCockpit.resetExtensionState', async () => {
+                const confirm = await vscode.window.showWarningMessage(
+                    '🔧 [DEBUG] This will reset ALL extension data:\n' +
+                    '• Clear all globalState (groupings, pins, preferences)\n' +
+                    '• Clear authorization credentials\n' +
+                    '• Reset quotaSource to "local"\n\n' +
+                    'Restart VS Code after this to simulate first-time install.',
+                    { modal: true },
+                    'Reset All',
+                    'Cancel',
+                );
+
+                if (confirm !== 'Reset All') {
+                    return;
+                }
+
+                try {
+                    // 1. 清除所有已知的 globalState 键
+                    const stateKeys = [
+                        // config_service 的状态键 (state.xxx)
+                        'state.migratedToGlobalState',
+                        'state.pinnedModels',
+                        'state.modelOrder',
+                        'state.customGroupMappings',
+                        'state.customGroupNames',
+                        'state.modelCustomNames',
+                        'state.visibleModels',
+                        // auto_trigger 的状态键
+                        'antigravity.autoTrigger.state.triggerHistory',
+                        'antigravity.autoTrigger.state.lastResetTriggerTimestamps',
+                        'antigravity.autoTrigger.state.lastResetTriggerAt',
+                        'antigravity.autoTrigger.state.isEnabled',
+                        'antigravity.autoTrigger.state.scheduleRules',
+                        'antigravity.autoTrigger.state.selectedModels',
+                        'antigravity.autoTrigger.state.customPrompt',
+                        // announcement 的状态键
+                        'announcement_cache',
+                        'announcement_read_ids',
+                    ];
+
+                    for (const key of stateKeys) {
+                        await this.context.globalState.update(key, undefined);
+                    }
+                    logger.info('[Debug] Cleared all globalState keys');
+
+                    // 2. 清除授权凭证 (通过 credentialStorage)
+                    const { credentialStorage } = await import('../auto_trigger');
+                    await credentialStorage.deleteCredential();
+                    logger.info('[Debug] Cleared authorization credentials');
+
+                    // 3. 重置 quotaSource 配置到默认值 local
+                    await configService.updateConfig('quotaSource', 'local');
+                    logger.info('[Debug] Reset quotaSource to local');
+
+                    vscode.window.showInformationMessage(
+                        '✅ Extension state has been reset!\n\n' +
+                        'Please restart VS Code (Cmd+Shift+P > "Developer: Reload Window") ' +
+                        'to simulate a first-time install.',
+                    );
+                } catch (error) {
+                    const err = error instanceof Error ? error : new Error(String(error));
+                    logger.error(`[Debug] Failed to reset extension state: ${err.message}`);
+                    vscode.window.showErrorMessage(`Failed to reset: ${err.message}`);
+                }
+            }),
+        );
+
+        logger.info('[Debug] Debug commands registered (Development mode)');
     }
 }

@@ -137,6 +137,15 @@ export const it = {
     'model.namePlaceholder': 'Inserisci nome...',
     'model.ok': 'OK',
     'model.reset': 'Reimposta',
+    'models.manage': 'Gestisci modelli',
+    'models.manageTitle': 'Gestisci modelli visibili',
+    'models.hint': 'Seleziona i modelli da mostrare',
+    'models.selectAll': 'Seleziona tutto',
+    'models.clearAll': 'Cancella',
+    'models.selectRecommended': 'Consigliati',
+    'models.save': 'Salva selezione',
+    'models.saved': 'Visibilità modelli aggiornata.',
+    'models.empty': 'Nessun modello disponibile.',
 
     // Formato Barra di Stato
     'statusBarFormat.title': 'Stile Barra di Stato',
@@ -216,17 +225,20 @@ export const it = {
     'capability.tools': 'Strumenti',
     'capability.recommended': 'Modello Consigliato',
 
-    // View Mode
     'dashboard.modelName': 'Nome Modello',
     'dashboard.name': 'Nome',
     'dashboard.remainingQuota': 'Quota Rimanente',
     'grouping.nameLabel': 'Nome Gruppo',
-    'viewMode.title': 'Modalità Vista',
-    'viewMode.card': 'Vista Schede',
-    'viewMode.list': 'Vista Elenco',
     'displayMode.title': 'Modalità Visualizzazione',
     'displayMode.webview': 'Dashboard (Webview)',
     'displayMode.quickpick': 'Modalità QuickPick',
+    'quotaSource.title': 'Origine quota',
+    'quotaSource.local': 'Locale',
+    'quotaSource.authorized': 'Autorizzato',
+    'quotaSource.authorizedMissing': 'Completa prima l\'autorizzazione del risveglio.',
+    'quotaSource.localInfoTitle': 'Legge la quota dal processo locale di Antigravity. Più stabile, ma richiede che il client sia in esecuzione.',
+    'quotaSource.localInfoDesc': '→ Clicca per passare al monitoraggio autorizzato',
+    'quotaSource.authorizedInfoTitle': 'Recupera la quota tramite API remote autorizzate. Non dipende dal processo locale, ideale per relay API o uso senza il client Antigravity.',
 
     // Footer
     'footer.enjoyingThis': 'Ti piace? Dacci una ⭐!',

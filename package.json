@@ -3,7 +3,7 @@
   "displayName": "Antigravity Cockpit",
   "icon": "assets/icon.png",
   "description": "A premium, dashboard-style quota monitor for Antigravity AI.",
-  "version": "1.6.15",
+  "version": "1.7.0",
   "publisher": "jlcodes",
   "engines": {
     "vscode": "^1.90.0"
@@ -74,6 +74,12 @@
         "title": "Refresh Announcements",
         "category": "Antigravity",
         "icon": "$(bell)"
+      },
+      {
+        "command": "agCockpit.resetExtensionState",
+        "title": "[Debug] Reset Extension State",
+        "category": "Antigravity",
+        "icon": "$(debug)"
       }
     ],
     "keybindings": [
@@ -98,27 +104,6 @@
           "minimum": 10,
           "maximum": 3600,
           "description": "Interval in seconds to refresh quota data (10-3600)."
-        },
-        "agCockpit.pinnedModels": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Specific models to monitor in the status bar (e.g. 'gpt-4', 'gemini-1.5-pro'). If empty, monitors the lowest quota model."
-        },
-        "agCockpit.modelOrder": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "User-defined order of models in the dashboard."
-        },
-        "agCockpit.modelCustomNames": {
-          "type": "object",
-          "default": {},
-          "description": "Custom display names for models. Maps model IDs to custom names."
         },
         "agCockpit.logLevel": {
           "type": "string",
@@ -168,36 +153,10 @@
           "default": true,
           "description": "Enable quota grouping feature. Models sharing the same quota pool will be grouped together."
         },
-        "agCockpit.groupingCustomNames": {
-          "type": "object",
-          "default": {},
-          "description": "Custom names for quota groups. Maps model IDs to group names."
-        },
         "agCockpit.groupingShowInStatusBar": {
           "type": "boolean",
           "default": true,
           "description": "Show quota groups in the status bar instead of individual models."
-        },
-        "agCockpit.pinnedGroups": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Groups to pin to the status bar."
-        },
-        "agCockpit.groupOrder": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "User-defined order of groups in the dashboard."
-        },
-        "agCockpit.groupMappings": {
-          "type": "object",
-          "default": {},
-          "description": "Model to group mappings. Used to persist group assignments. Click 'Auto Group' to recalculate based on current quota."
         },
         "agCockpit.warningThreshold": {
           "type": "number",
@@ -212,6 +171,19 @@
           "minimum": 1,
           "maximum": 50,
           "description": "Critical threshold percentage. Quota below this value will show red danger alert. (1-50)"
+        },
+        "agCockpit.quotaSource": {
+          "type": "string",
+          "default": "local",
+          "enum": [
+            "local",
+            "authorized"
+          ],
+          "enumDescriptions": [
+            "Local process (default)",
+            "Authorized account"
+          ],
+          "description": "Quota source. Use authorized account to fetch quota without local process."
         },
         "agCockpit.displayMode": {
           "type": "string",
@@ -230,19 +202,6 @@
           "type": "boolean",
           "default": false,
           "description": "Hide the Plan Details panel in the dashboard."
-        },
-        "agCockpit.viewMode": {
-          "type": "string",
-          "default": "card",
-          "enum": [
-            "card",
-            "list"
-          ],
-          "enumDescriptions": [
-            "Card View (default)",
-            "List View"
-          ],
-          "description": "View mode for displaying quota data in the dashboard."
         },
         "agCockpit.dataMasked": {
           "type": "boolean",

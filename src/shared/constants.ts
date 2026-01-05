@@ -61,6 +61,7 @@ export const CONFIG_KEYS = {
     PINNED_MODELS: 'pinnedModels',
     MODEL_ORDER: 'modelOrder',
     MODEL_CUSTOM_NAMES: 'modelCustomNames',
+    VISIBLE_MODELS: 'visibleModels',
     LOG_LEVEL: 'logLevel',
     NOTIFICATION_ENABLED: 'notificationEnabled',
     STATUS_BAR_FORMAT: 'statusBarFormat',
@@ -72,9 +73,9 @@ export const CONFIG_KEYS = {
     GROUP_MAPPINGS: 'groupMappings',
     WARNING_THRESHOLD: 'warningThreshold',
     CRITICAL_THRESHOLD: 'criticalThreshold',
+    QUOTA_SOURCE: 'quotaSource',
     DISPLAY_MODE: 'displayMode',
     PROFILE_HIDDEN: 'profileHidden',
-    VIEW_MODE: 'viewMode',
     DATA_MASKED: 'dataMasked',
 } as const;
 

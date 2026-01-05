@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.7.0]
+
+### Added
+- **Authorized Quota Source**: Monitor quotas without a local process, sharing credentials with Auto Wake-up. Added source toggle UI and authorization status card.
+- **Model Visibility**: Manage which models appear in the dashboard and status bar.
+- **Debug Command**: Added "Reset Extension State" command (development mode only) to clear all state data for fresh install simulation.
+
+### Changed
+- **Auto Wake-up**: Concurrent triggering with a summarized result log, plus more stable reset detection (rising-edge, cooldown, valid reset time).
+- **Refresh**: Manual refresh cooldown reduced to 10 seconds.
+
+### Fixed
+- **Auto Wake-up**: Fixed scheduled trigger bug where only the first time point was triggered when multiple times with different minutes (e.g., `07:00`, `09:30`) were configured.
+- **Auto Wake-up**: Fixed weekly mode multi-time bug, now supports multiple time points with different minutes.
+- **Auto Wake-up**: Fixed status page mode display showing only the first time point, now shows all time points.
+- **Authorized Monitoring**: Removed redundant prompt text when not authorized.
+
+### Migration
+- **Why**: Group/model personalization (order, pins, custom names, visibility) grew settings.json, created sync noise, and behaved more like per-device UI state.
+- **What**: Move these UI preferences from settings to globalState (no cross-device sync), and clean up legacy settings. Removed list view and the `viewMode` setting.
+
 ## [1.6.15]
 
 ### Added

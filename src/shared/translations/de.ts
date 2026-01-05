@@ -137,6 +137,15 @@ export const de = {
     'model.namePlaceholder': 'Namen eingeben...',
     'model.ok': 'OK',
     'model.reset': 'Zurücksetzen',
+    'models.manage': 'Modelle verwalten',
+    'models.manageTitle': 'Sichtbare Modelle verwalten',
+    'models.hint': 'Wähle die anzuzeigenden Modelle',
+    'models.selectAll': 'Alle auswählen',
+    'models.clearAll': 'Leeren',
+    'models.selectRecommended': 'Empfohlen',
+    'models.save': 'Auswahl speichern',
+    'models.saved': 'Modellanzeige aktualisiert.',
+    'models.empty': 'Keine Modelle verfügbar.',
 
     // Statusleisten-Format
     'statusBarFormat.title': 'Statusleisten-Stil',
@@ -216,17 +225,20 @@ export const de = {
     'capability.tools': 'Werkzeuge',
     'capability.recommended': 'Empfohlenes Modell',
 
-    // View Mode
     'dashboard.modelName': 'Modellname',
     'dashboard.name': 'Name',
     'dashboard.remainingQuota': 'Verbleibendes Kontingent',
     'grouping.nameLabel': 'Gruppenname',
-    'viewMode.title': 'Ansichtsmodus',
-    'viewMode.card': 'Kartenansicht',
-    'viewMode.list': 'Listenansicht',
     'displayMode.title': 'Anzeigemodus',
     'displayMode.webview': 'Dashboard (Webview)',
     'displayMode.quickpick': 'QuickPick-Modus',
+    'quotaSource.title': 'Quota-Quelle',
+    'quotaSource.local': 'Lokal',
+    'quotaSource.authorized': 'Autorisiert',
+    'quotaSource.authorizedMissing': 'Bitte zuerst die Weck-Autorisierung abschließen.',
+    'quotaSource.localInfoTitle': 'Liest das Kontingent aus dem lokalen Antigravity-Client. Stabiler, erfordert jedoch einen laufenden Client.',
+    'quotaSource.localInfoDesc': '→ Klicken, um zur autorisierten Überwachung zu wechseln',
+    'quotaSource.authorizedInfoTitle': 'Bezieht das Kontingent über autorisierte Remote-APIs. Unabhängig vom lokalen Prozess, geeignet für API-Relay oder Nutzung ohne den Antigravity-Client.',
 
     // Footer
     'footer.enjoyingThis': 'Gefällt es Ihnen? Geben Sie uns einen ⭐!',

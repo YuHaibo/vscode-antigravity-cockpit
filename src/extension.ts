@@ -34,6 +34,7 @@ let _messageController: MessageController;
 let _telemetryController: TelemetryController;
 
 let systemOnline = false;
+let lastQuotaSource: 'local' | 'authorized';
 
 // 自动重试计数器
 let autoRetryCount = 0;
@@ -46,6 +47,7 @@ const AUTO_RETRY_DELAY_MS = 5000;
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     // 初始化日志
     logger.init();
+    await configService.initialize(context);
 
     // 获取插件版本号
     const packageJson = await import('../package.json');
@@ -61,6 +63,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reactor = new ReactorCore();
     hud = new CockpitHUD(context.extensionUri, context);
     quickPickView = new QuickPickView();
+    lastQuotaSource = configService.getConfig().quotaSource === 'authorized' ? 'authorized' : 'local';
 
     // 设置 QuickPick 刷新回调
     quickPickView.onRefresh(() => {
@@ -104,6 +107,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 async function handleConfigChange(config: CockpitConfig): Promise<void> {
     logger.debug('Configuration changed', config);
 
+    const currentQuotaSource = config.quotaSource === 'authorized' ? 'authorized' : 'local';
+    const quotaSourceChanged = currentQuotaSource !== lastQuotaSource;
+    if (quotaSourceChanged) {
+        logger.info(`Quota source changed: ${lastQuotaSource} -> ${currentQuotaSource}, skipping reprocess`);
+        lastQuotaSource = currentQuotaSource;
+    }
+
     // 仅当刷新间隔变化时重启 Reactor
     const newInterval = configService.getRefreshIntervalMs();
 
@@ -115,7 +125,9 @@ async function handleConfigChange(config: CockpitConfig): Promise<void> {
 
     // 对于任何配置变更，立即重新处理最近的数据以更新 UI（如状态栏格式变化）
     // 这确保存储在 lastSnapshot 中的数据使用新配置重新呈现
-    reactor.reprocess();
+    if (!quotaSourceChanged) {
+        reactor.reprocess();
+    }
 }
 
 /**
@@ -123,6 +135,16 @@ async function handleConfigChange(config: CockpitConfig): Promise<void> {
  */
 async function bootSystems(): Promise<void> {
     if (systemOnline) {
+        return;
+    }
+
+    const quotaSource = configService.getConfig().quotaSource;
+    if (quotaSource === 'authorized') {
+        logger.info('Authorized quota source active, skipping local process scan');
+        reactor.startReactor(configService.getRefreshIntervalMs());
+        systemOnline = true;
+        autoRetryCount = 0;
+        statusBar.setLoading();
         return;
     }
 
@@ -198,6 +220,10 @@ async function bootSystems(): Promise<void> {
  * 处理离线状态
  */
 function handleOfflineState(): void {
+    if (configService.getConfig().quotaSource === 'authorized') {
+        logger.info('Skipping local offline state due to authorized quota source');
+        return;
+    }
     statusBar.setOffline();
 
     // 显示带操作按钮的消息

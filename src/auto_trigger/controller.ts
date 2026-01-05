@@ -175,7 +175,7 @@ class AutoTriggerController {
                 throw new Error('请先完成授权');
             }
             schedulerService.setSchedule(config, () => this.executeTrigger());
-            logger.info('[AutoTriggerController] Schedule saved, enabled=${config.enabled}');
+            logger.info(`[AutoTriggerController] Schedule saved, enabled=${config.enabled}`);
         } else {
             // 都不启用
             schedulerService.stop();

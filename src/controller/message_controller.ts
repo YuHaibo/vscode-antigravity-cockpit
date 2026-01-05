@@ -6,7 +6,9 @@ import { configService } from '../shared/config_service';
 import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';
 import { WebviewMessage } from '../shared/types';
+import { TIMING } from '../shared/constants';
 import { autoTriggerController } from '../auto_trigger/controller';
+import { credentialStorage } from '../auto_trigger';
 import { announcementService } from '../announcement';
 
 export class MessageController {
@@ -22,6 +24,47 @@ export class MessageController {
     ) {
         this.context = context;
         this.setupMessageHandling();
+    }
+
+    private async applyQuotaSourceChange(
+        source: 'local' | 'authorized',
+    ): Promise<void> {
+        const previousSource = configService.getConfig().quotaSource;
+        
+        if (source === 'authorized') {
+            this.reactor.cancelInitRetry();
+        }
+        
+        logger.info(`User changed quota source to: ${source}`);
+        await configService.updateConfig('quotaSource', source);
+        
+        // 发送 loading 状态提示
+        this.hud.sendMessage({
+            type: 'quotaSourceLoading',
+            data: { source },
+        });
+        this.hud.sendMessage({
+            type: 'switchTab',
+            tab: 'quota',
+        });
+
+        // 如果配额来源发生变化，触发完整初始化流程
+        if (previousSource !== source) {
+            if (source === 'local') {
+                await this.onRetry();
+            } else {
+                this.reactor.syncTelemetry();
+            }
+            return;
+        }
+        
+        const cacheAge = this.reactor.getCacheAgeMs(source);
+        const refreshIntervalMs = configService.getConfig().refreshInterval ?? TIMING.DEFAULT_REFRESH_INTERVAL_MS;
+        const hasCache = this.reactor.publishCachedTelemetry(source);
+        const cacheStale = cacheAge === undefined || cacheAge > refreshIntervalMs;
+        if (!hasCache || cacheStale) {
+            this.reactor.syncTelemetry();
+        }
     }
 
     private setupMessageHandling(): void {
@@ -63,6 +106,19 @@ export class MessageController {
                     }
                     break;
 
+                case 'updateVisibleModels':
+                    if (Array.isArray(message.visibleModels)) {
+                        logger.info(`User updated visible models. Count: ${message.visibleModels.length}`);
+                        await configService.updateVisibleModels(message.visibleModels);
+                        if (configService.getConfig().quotaSource === 'authorized') {
+                            await configService.setStateFlag('visibleModelsInitializedAuthorized', true);
+                        }
+                        this.reactor.reprocess();
+                    } else {
+                        logger.warn('updateVisibleModels signal missing visibleModels');
+                    }
+                    break;
+
                 case 'resetOrder': {
                     const currentConfig = configService.getConfig();
                     if (currentConfig.groupingEnabled) {
@@ -97,6 +153,7 @@ export class MessageController {
                             data: annState,
                         });
                     }
+
                     break;
 
                 case 'retry':
@@ -280,17 +337,6 @@ export class MessageController {
                     }
                     break;
 
-                case 'updateViewMode':
-                    // 更新视图模式
-                    if (message.viewMode) {
-                        logger.info(`User changed view mode to: ${message.viewMode}`);
-                        await configService.updateConfig('viewMode', message.viewMode);
-                        this.reactor.reprocess();
-                    } else {
-                        logger.warn('updateViewMode signal missing viewMode');
-                    }
-                    break;
-
                 case 'updateDisplayMode':
                     if (message.displayMode) {
                         logger.info(`User changed display mode to: ${message.displayMode}`);
@@ -308,6 +354,16 @@ export class MessageController {
                         }
                     }
                     break;
+
+                case 'updateQuotaSource':
+                    if (message.quotaSource) {
+                        await this.applyQuotaSourceChange(message.quotaSource);
+                    } else {
+                        logger.warn('updateQuotaSource signal missing quotaSource');
+                    }
+                    break;
+
+
 
                 case 'updateDataMasked':
                     // 更新数据遮罩状态
@@ -361,6 +417,9 @@ export class MessageController {
                             type: 'autoTriggerState',
                             data: state,
                         });
+                        if (configService.getConfig().quotaSource === 'authorized') {
+                            this.reactor.syncTelemetry();
+                        }
                     } catch (error) {
                         const err = error instanceof Error ? error : new Error(String(error));
                         logger.error(`Authorization failed: ${err.message}`);
@@ -377,6 +436,9 @@ export class MessageController {
                             type: 'autoTriggerState',
                             data: state,
                         });
+                    }
+                    if (configService.getConfig().quotaSource === 'authorized') {
+                        this.reactor.syncTelemetry();
                     }
                     break;
 

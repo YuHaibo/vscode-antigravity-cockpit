@@ -137,6 +137,15 @@ export const ptBR = {
     'model.namePlaceholder': 'Digite o nome...',
     'model.ok': 'OK',
     'model.reset': 'Redefinir',
+    'models.manage': 'Gerenciar modelos',
+    'models.manageTitle': 'Gerenciar modelos exibidos',
+    'models.hint': 'Selecione os modelos para exibir',
+    'models.selectAll': 'Selecionar tudo',
+    'models.clearAll': 'Limpar',
+    'models.selectRecommended': 'Recomendados',
+    'models.save': 'Salvar seleção',
+    'models.saved': 'Exibição de modelos atualizada.',
+    'models.empty': 'Nenhum modelo disponível.',
 
     // Formato da Barra de Status
     'statusBarFormat.title': 'Estilo da Barra de Status',
@@ -216,17 +225,20 @@ export const ptBR = {
     'capability.tools': 'Ferramentas',
     'capability.recommended': 'Modelo Recomendado',
 
-    // View Mode
     'dashboard.modelName': 'Nome do Modelo',
     'dashboard.name': 'Nome',
     'dashboard.remainingQuota': 'Cota Restante',
     'grouping.nameLabel': 'Nome do Grupo',
-    'viewMode.title': 'Modo de Visualização',
-    'viewMode.card': 'Visualização em Cartões',
-    'viewMode.list': 'Visualização em Lista',
     'displayMode.title': 'Modo de Exibição',
     'displayMode.webview': 'Painel (Webview)',
     'displayMode.quickpick': 'Modo QuickPick',
+    'quotaSource.title': 'Fonte de cota',
+    'quotaSource.local': 'Local',
+    'quotaSource.authorized': 'Autorizado',
+    'quotaSource.authorizedMissing': 'Conclua primeiro a autorização de despertar.',
+    'quotaSource.localInfoTitle': 'Lê a cota do processo local do Antigravity. Mais estável, mas exige que o cliente esteja em execução.',
+    'quotaSource.localInfoDesc': '→ Clique para mudar para monitoramento autorizado',
+    'quotaSource.authorizedInfoTitle': 'Busca a cota via APIs remotas autorizadas. Não depende do processo local, ideal para relay de API ou uso sem o cliente Antigravity.',
 
     // Footer
     'footer.enjoyingThis': 'Gostando? Dê-nos uma ⭐!',

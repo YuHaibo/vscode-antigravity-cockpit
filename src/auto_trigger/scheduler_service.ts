@@ -38,36 +38,38 @@ class CronParser {
     /**
      * 每天模式转 crontab
      * 例如: ["07:00", "12:00", "17:00"] -> "0 7,12,17 * * *"
+     * 如果分钟不同: ["07:00", "09:30"] -> "0 7 * * *;30 9 * * *" (多条表达式用分号分隔)
      */
     private static dailyToCrontab(times: string[]): string {
         if (times.length === 0) {
             return '0 8 * * *';
         }
 
-        const hours = new Set<number>();
-        const minutes = new Set<number>();
-
+        // 按分钟分组
+        const minuteGroups = new Map<number, number[]>();
         for (const time of times) {
             const [h, m] = time.split(':').map(Number);
-            hours.add(h);
-            minutes.add(m);
+            if (!minuteGroups.has(m)) {
+                minuteGroups.set(m, []);
+            }
+            minuteGroups.get(m)!.push(h);
         }
 
-        // 如果所有时间的分钟相同，用简单格式
-        if (minutes.size === 1) {
-            const minute = Array.from(minutes)[0];
-            const hourList = Array.from(hours).sort((a, b) => a - b).join(',');
-            return `${minute} ${hourList} * * *`;
+        // 为每个分钟组生成一条 crontab 表达式
+        const expressions: string[] = [];
+        for (const [minute, hours] of minuteGroups) {
+            const hourList = hours.sort((a, b) => a - b).join(',');
+            expressions.push(`${minute} ${hourList} * * *`);
         }
 
-        // 否则需要多条表达式（返回第一个时间点的表达式）
-        const [h, m] = times[0].split(':').map(Number);
-        return `${m} ${h} * * *`;
+        // 用分号分隔多条表达式
+        return expressions.join(';');
     }
 
     /**
      * 每周模式转 crontab
      * 例如: days=[1,2,3,4,5], times=["08:00"] -> "0 8 * * 1-5"
+     * 如果分钟不同: days=[1,2,3,4,5], times=["08:00", "09:30"] -> "0 8 * * 1-5;30 9 * * 1-5"
      */
     private static weeklyToCrontab(days: number[], times: string[]): string {
         if (days.length === 0 || times.length === 0) {
@@ -84,8 +86,24 @@ class CronParser {
             dayExpr = sortedDays.join(',');
         }
 
-        const [h, m] = times[0].split(':').map(Number);
-        return `${m} ${h} * * ${dayExpr}`;
+        // 按分钟分组
+        const minuteGroups = new Map<number, number[]>();
+        for (const time of times) {
+            const [h, m] = time.split(':').map(Number);
+            if (!minuteGroups.has(m)) {
+                minuteGroups.set(m, []);
+            }
+            minuteGroups.get(m)!.push(h);
+        }
+
+        // 为每个分钟组生成一条 crontab 表达式
+        const expressions: string[] = [];
+        for (const [minute, hours] of minuteGroups) {
+            const hourList = hours.sort((a, b) => a - b).join(',');
+            expressions.push(`${minute} ${hourList} * * ${dayExpr}`);
+        }
+
+        return expressions.join(';');
     }
 
     /**
@@ -126,31 +144,43 @@ class CronParser {
     }
 
     /**
-     * 解析 crontab 表达式
+     * 解析 crontab 表达式（支持多条，用分号分隔）
      */
     static parse(crontab: string): CrontabParseResult {
         try {
-            const parts = crontab.trim().split(/\s+/);
-            if (parts.length !== 5) {
+            const expressions = crontab.split(';').filter(e => e.trim());
+            
+            if (expressions.length === 0) {
                 return {
                     valid: false,
-                    error: '无效的 crontab 格式，需要 5 个字段',
+                    error: '无效的 crontab 格式',
                 };
             }
 
-            const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+            const allDescriptions: string[] = [];
+            
+            for (const expr of expressions) {
+                const parts = expr.trim().split(/\s+/);
+                if (parts.length !== 5) {
+                    return {
+                        valid: false,
+                        error: '无效的 crontab 格式，需要 5 个字段',
+                    };
+                }
 
-            // 生成人类可读描述
-            const description = this.generateDescription(minute, hour, dayOfMonth, month, dayOfWeek);
-
-            const interval = CronExpressionParser.parse(crontab, {
-                currentDate: new Date(),
-                tz: LOCAL_TIMEZONE,
-            });
-            const nextRuns: Date[] = [];
-            for (let i = 0; i < 5; i++) {
-                nextRuns.push(interval.next().toDate());
+                const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+                const desc = this.generateDescription(minute, hour, dayOfMonth, month, dayOfWeek);
+                allDescriptions.push(desc);
             }
+
+            // 获取合并后的下次运行时间
+            const nextRuns = this.getNextRuns(crontab, 5);
+
+            // 合并描述（去重）
+            const uniqueDescs = [...new Set(allDescriptions)];
+            const description = uniqueDescs.length === 1 
+                ? uniqueDescs[0]
+                : uniqueDescs.join(', ');
 
             return {
                 valid: true,
@@ -189,12 +219,15 @@ class CronParser {
         // 时间描述
         if (minute === '0' && hour === '*') {
             parts.push('每小时整点');
-        } else if (minute.includes(',') && hour.includes(',')) {
-            parts.push(`每天 ${hour.replace(',', ', ')} 点 ${minute} 分`);
         } else if (hour.includes(',')) {
-            parts.push(`每天 ${hour.split(',').map(h => `${h}:${minute.padStart(2, '0')}`).join(', ')}`);
+            // 多个小时，相同分钟：如 "0 7,12,17 * * *" -> "每天 07:00, 12:00, 17:00"
+            const hours = hour.split(',');
+            const min = minute.padStart(2, '0');
+            const timeList = hours.map(h => `${h.padStart(2, '0')}:${min}`).join(', ');
+            parts.push(`每天 ${timeList}`);
         } else if (hour !== '*' && minute !== '*') {
-            parts.push(`每天 ${hour}:${minute.padStart(2, '0')}`);
+            // 单个时间点：如 "30 9 * * *" -> "每天 09:30"
+            parts.push(`每天 ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`);
         }
 
         // 星期描述
@@ -244,20 +277,32 @@ class CronParser {
 
     /**
      * 计算接下来 n 次运行时间
+     * 支持多条 crontab 表达式（用分号分隔）
      */
     static getNextRuns(crontab: string, count: number): Date[] {
         try {
-            const results: Date[] = [];
-            const interval = CronExpressionParser.parse(crontab, {
-                currentDate: new Date(),
-                tz: LOCAL_TIMEZONE,
-            });
+            const expressions = crontab.split(';').filter(e => e.trim());
+            const allDates: Date[] = [];
 
-            for (let i = 0; i < count; i++) {
-                results.push(interval.next().toDate());
+            for (const expr of expressions) {
+                const interval = CronExpressionParser.parse(expr.trim(), {
+                    currentDate: new Date(),
+                    tz: LOCAL_TIMEZONE,
+                });
+
+                // 从每条表达式获取足够多的下次运行时间
+                for (let i = 0; i < count; i++) {
+                    allDates.push(interval.next().toDate());
+                }
             }
 
-            return results;
+            // 排序并去重（按时间戳去重）
+            const uniqueDates = Array.from(
+                new Map(allDates.map(d => [d.getTime(), d])).values()
+            );
+            uniqueDates.sort((a, b) => a.getTime() - b.getTime());
+
+            return uniqueDates.slice(0, count);
         } catch {
             return [];
         }

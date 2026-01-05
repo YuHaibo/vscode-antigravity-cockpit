@@ -9,7 +9,7 @@
 
 VS Code 扩展，用于监控 Google Antigravity AI 模型配额。
 
-**功能**：Webview 仪表盘 · QuickPick 模式 · 配额分组 · 自动分组 · 重命名 · 卡片/列表视图 · 拖拽排序 · 状态栏监控 · 阈值通知 · 隐私模式
+**功能**：Webview 仪表盘 · QuickPick 模式 · 配额分组 · 自动分组 · 重命名 · 卡片视图 · 拖拽排序 · 状态栏监控 · 阈值通知 · 隐私模式
 
 **语言**：跟随 VS Code 语言设置，支持 14 种语言
 
@@ -27,13 +27,11 @@ VS Code 扩展，用于监控 Google Antigravity AI 模型配额。
 
 ![Dashboard Overview](assets/dashboard_card_grouped.png)
 
-- **卡片视图 / 列表视图**：两种布局，通过设置面板切换
+- **卡片视图**：卡片布局展示模型配额
 - **分组模式**：按配额池聚合模型，显示分组配额
 - **非分组模式**：显示单个模型配额
 - **拖拽排序**：拖动卡片调整显示顺序
 - **自动分组**：根据配额池自动归类模型
-
-![List View](assets/dashboard_list_view.png)
 
 #### QuickPick 模式
 
@@ -162,7 +160,6 @@ VS Code 扩展，用于监控 Google Antigravity AI 模型配额。
 | 配置 | 默认值 | 说明 |
 |------|--------|------|
 | `agCockpit.displayMode` | `webview` | 显示模式：`webview` / `quickpick` |
-| `agCockpit.viewMode` | `card` | 视图模式：`card` / `list` |
 | `agCockpit.refreshInterval` | `120` | 刷新间隔（秒，10-3600） |
 | `agCockpit.statusBarFormat` | `standard` | 状态栏格式 |
 | `agCockpit.groupingEnabled` | `true` | 启用分组模式 |
