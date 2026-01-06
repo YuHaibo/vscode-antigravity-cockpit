@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.7.21]
+
+### Fixed
+- **Announcements**: Announcement language filtering now respects the manual language setting.
+
 ## [1.7.2]
 
 ### Added

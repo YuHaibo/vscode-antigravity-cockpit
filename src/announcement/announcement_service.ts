@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import { Announcement, AnnouncementResponse, AnnouncementState } from './types';
 import { logger } from '../shared/log_service';
+import { i18n } from '../shared/i18n';
 
 // 公告源 URL（GitHub Gist Raw URL）
 const ANNOUNCEMENT_URL_PROD = 'https://gist.githubusercontent.com/jlcodes99/49facf261e9479a5b50fb81e4ab0afad/raw/announcements.json';
@@ -150,7 +151,7 @@ class AnnouncementService {
      */
     private filterAnnouncements(list: Announcement[]): Announcement[] {
         const now = Date.now();
-        const locale = vscode.env.language.toLowerCase(); // e.g., 'zh-cn', 'en-us'
+        const locale = i18n.getLocale().toLowerCase(); // Use i18n locale (respects manual language setting)
 
         return list.filter(ann => {
             // 1. 版本匹配
