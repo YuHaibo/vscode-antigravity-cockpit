@@ -192,18 +192,20 @@ class TriggerService {
         triggerType: 'manual' | 'auto' = 'manual',
         customPrompt?: string,
         triggerSource?: 'manual' | 'scheduled' | 'crontab' | 'quota_reset',
+        accountEmail?: string,
     ): Promise<TriggerRecord> {
         const startTime = Date.now();
         const triggerModels = (models && models.length > 0) ? models : ['gemini-3-flash'];
         const promptText = customPrompt || 'hi';  // 使用自定义或默认唤醒词
         let stage = 'start';
+        const accountLabel = accountEmail ? ` (${accountEmail})` : '';
         
-        logger.info(`[TriggerService] Starting trigger (${triggerType}) for models: ${triggerModels.join(', ')}, prompt: "${promptText}"...`);
+        logger.info(`[TriggerService] Starting trigger (${triggerType})${accountLabel} for models: ${triggerModels.join(', ')}, prompt: "${promptText}"...`);
 
         try {
             // 1. 获取有效的 access_token
             stage = 'get_access_token';
-            const tokenResult = await this.getAccessTokenResult();
+            const tokenResult = await this.getAccessTokenResult(accountEmail);
             if (tokenResult.state !== 'ok' || !tokenResult.token) {
                 throw new Error(`No valid access token (${tokenResult.state}). Please authorize first.`);
             }
@@ -211,8 +213,10 @@ class TriggerService {
 
             // 2. 获取 project_id
             stage = 'get_project_id';
-            const credential = await credentialStorage.getCredential();
-            const projectId = credential?.projectId || await this.fetchProjectId(accessToken);
+            const credential = accountEmail
+                ? await credentialStorage.getCredentialForAccount(accountEmail)
+                : await credentialStorage.getCredential();
+            const projectId = credential?.projectId || await this.fetchProjectId(accessToken, accountEmail);
 
             // 3. 发送触发请求
             const results: Array<{
@@ -275,6 +279,7 @@ class TriggerService {
                 duration: Date.now() - startTime,
                 triggerType: triggerType,
                 triggerSource: triggerSource || (triggerType === 'manual' ? 'manual' : undefined),
+                accountEmail: accountEmail,
             };
 
             this.addRecord(record);
@@ -290,7 +295,7 @@ class TriggerService {
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             const sourceLabel = triggerSource ?? triggerType;
-            logger.error(`[TriggerService] Trigger failed (stage=${stage}, source=${sourceLabel}, models=${triggerModels.join(', ')}): ${err.message}`);
+            logger.error(`[TriggerService] Trigger failed${accountLabel} (stage=${stage}, source=${sourceLabel}, models=${triggerModels.join(', ')}): ${err.message}`);
             
             // 记录失败
             const record: TriggerRecord = {
@@ -301,6 +306,7 @@ class TriggerService {
                 duration: Date.now() - startTime,
                 triggerType: triggerType,
                 triggerSource: triggerSource || (triggerType === 'manual' ? 'manual' : undefined),
+                accountEmail: accountEmail,
             };
 
             this.addRecord(record);
@@ -346,7 +352,7 @@ class TriggerService {
     /**
      * 获取 project_id
      */
-    private async fetchProjectId(accessToken: string): Promise<string> {
+    private async fetchProjectId(accessToken: string, accountEmail?: string): Promise<string> {
         let projectId: string | undefined;
         try {
             const info = await cloudCodeClient.resolveProjectId(accessToken, {
@@ -360,10 +366,14 @@ class TriggerService {
         }
 
         if (projectId) {
-            const credential = await credentialStorage.getCredential();
-            if (credential) {
-                credential.projectId = projectId;
-                await credentialStorage.saveCredential(credential);
+            if (accountEmail) {
+                await credentialStorage.updateProjectIdForAccount(accountEmail, projectId);
+            } else {
+                const credential = await credentialStorage.getCredential();
+                if (credential) {
+                    credential.projectId = projectId;
+                    await credentialStorage.saveCredential(credential);
+                }
             }
             return projectId;
         }
@@ -495,8 +505,10 @@ class TriggerService {
         }
     }
 
-    private async getAccessTokenResult(): Promise<AccessTokenResult> {
-        const result = await oauthService.getAccessTokenStatus();
+    private async getAccessTokenResult(accountEmail?: string): Promise<AccessTokenResult> {
+        const result = accountEmail
+            ? await oauthService.getAccessTokenStatusForAccount(accountEmail)
+            : await oauthService.getAccessTokenStatus();
         if (result.state === 'invalid_grant') {
             logger.warn('[TriggerService] Refresh token invalid (invalid_grant)');
         } else if (result.state === 'expired') {

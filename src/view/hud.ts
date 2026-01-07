@@ -611,6 +611,15 @@ export class CockpitHUD {
                         </div>
                     </div>
 
+                    <!-- Account Selection (shared by all modes) -->
+                    <div class="at-config-section">
+                        <label>${t('autoTrigger.accountSection') || '账号选择'}</label>
+                        <p class="at-hint">${t('autoTrigger.accountHint') || '可多选，自动唤醒将依次使用这些账号'}</p>
+                        <div id="at-config-accounts" class="at-model-list">
+                            <div class="at-loading">${t('dashboard.connecting')}</div>
+                        </div>
+                    </div>
+
                     <!-- Scheduled Config -->
                     <div id="at-schedule-config-section">
                         <div class="at-config-section">
@@ -719,6 +728,12 @@ export class CockpitHUD {
             <div class="modal-body at-test-body">
                 <label>${t('autoTrigger.selectModels')}</label>
                 <div id="at-test-models" class="at-model-list">
+                    <div class="at-loading">${t('dashboard.connecting')}</div>
+                </div>
+
+                <label>${t('autoTrigger.testAccountSection') || '测试账号'}</label>
+                <p class="at-hint">${t('autoTrigger.testAccountHint') || '可多选，用这些账号进行测试'}</p>
+                <div id="at-test-accounts" class="at-model-list">
                     <div class="at-loading">${t('dashboard.connecting')}</div>
                 </div>
                 

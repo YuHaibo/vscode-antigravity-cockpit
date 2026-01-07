@@ -135,6 +135,13 @@ export class MessageController {
                 case 'refresh':
                     logger.info('User triggered manual refresh');
                     this.reactor.syncTelemetry();
+                    {
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                    }
                     break;
 
                 case 'init':
@@ -446,7 +453,7 @@ export class MessageController {
 
                 case 'autoTrigger.revoke':
                     logger.info('User revoked OAuth authorization');
-                    await autoTriggerController.revokeAuthorization();
+                    await autoTriggerController.revokeActiveAccount();
                     {
                         const state = await autoTriggerController.getState();
                         this.hud.sendMessage({
@@ -482,7 +489,11 @@ export class MessageController {
                             : undefined;
                         // 获取自定义唤醒词
                         const customPrompt = (message as { customPrompt?: string }).customPrompt;
-                        const result = await autoTriggerController.triggerNow(testModels, customPrompt);
+                        const rawAccounts = (message as { accounts?: unknown }).accounts;
+                        const testAccounts = Array.isArray(rawAccounts)
+                            ? rawAccounts.filter((email): email is string => typeof email === 'string' && email.length > 0)
+                            : undefined;
+                        const result = await autoTriggerController.triggerNow(testModels, customPrompt, testAccounts);
                         const state = await autoTriggerController.getState();
                         this.hud.sendMessage({
                             type: 'autoTriggerState',
@@ -590,6 +601,32 @@ export class MessageController {
                         }
                     } else {
                         logger.warn('switchAccount missing email');
+                    }
+                    break;
+
+                case 'autoTrigger.reauthorizeAccount':
+                    // 重新授权指定账号（先删除再重新授权）
+                    if (message.email) {
+                        logger.info(`User reauthorizing account: ${message.email}`);
+                        try {
+                            // 重新走授权流程，会覆盖该账号的 token
+                            await autoTriggerController.reauthorizeAccount(message.email);
+                            const state = await autoTriggerController.getState();
+                            this.hud.sendMessage({
+                                type: 'autoTriggerState',
+                                data: state,
+                            });
+                            if (configService.getConfig().quotaSource === 'authorized') {
+                                this.reactor.syncTelemetry();
+                            }
+                            vscode.window.showInformationMessage(t('autoTrigger.reauthorizeSuccess'));
+                        } catch (error) {
+                            const err = error instanceof Error ? error : new Error(String(error));
+                            logger.error(`Reauthorize account failed: ${err.message}`);
+                            vscode.window.showErrorMessage(`Reauthorize failed: ${err.message}`);
+                        }
+                    } else {
+                        logger.warn('reauthorizeAccount missing email');
                     }
                     break;
 

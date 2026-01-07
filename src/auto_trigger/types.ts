@@ -15,6 +15,8 @@ export interface OAuthCredential {
     projectId?: string;
     scopes: string[];
     email?: string;
+    /** True if refresh token is invalid (marked when refresh fails) */
+    isInvalid?: boolean;
 }
 
 /**
@@ -24,6 +26,8 @@ export interface AccountInfo {
     email: string;
     isActive: boolean;
     expiresAt?: string;
+    /** True if refresh token is invalid (marked when refresh fails) */
+    isInvalid?: boolean;
 }
 
 /**
@@ -75,6 +79,9 @@ export interface ScheduleConfig {
     /** 选中的模型列表 (用于触发) */
     selectedModels: string[];
 
+    /** 选中的账号列表（用于自动唤醒，多账号） */
+    selectedAccounts?: string[];
+
     /** 配额重置时自动唤醒 */
     wakeOnReset?: boolean;
 
@@ -93,6 +100,7 @@ export interface TriggerRecord {
     duration?: number;  // ms
     triggerType?: 'manual' | 'auto'; // 触发类型：手动测试 | 自动触发
     triggerSource?: 'manual' | 'scheduled' | 'crontab' | 'quota_reset'; // 自动触发来源
+    accountEmail?: string; // 触发账号
 }
 
 /**

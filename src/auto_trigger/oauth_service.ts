@@ -94,9 +94,12 @@ class OAuthService {
             // 9. Check for duplicate account
             const isDuplicate = await credentialStorage.hasAccount(email);
             if (isDuplicate) {
-                logger.warn(`[OAuthService] Account ${email} already exists`);
-                vscode.window.showWarningMessage(`⚠️ Account ${email} already exists / 账号已存在，无需重复添加`);
-                return true; // Still return true as auth itself succeeded
+                // Account exists - this is a re-authorization, update credentials
+                logger.info(`[OAuthService] Account ${email} exists, updating credentials`);
+                await credentialStorage.saveCredential(credential);
+                await credentialStorage.clearAccountInvalid(email);
+                vscode.window.showInformationMessage(`✅ Re-authorization successful / 重新授权成功: ${email}`);
+                return true;
             }
 
             // 10. 保存凭证 (new account)
@@ -175,6 +178,33 @@ class OAuthService {
         if (expiresAt.getTime() - now.getTime() < bufferTime) {
             logger.info('[OAuthService] Token expiring soon, refreshing...');
             const refreshed = await this.refreshAccessTokenDetailed();
+            if (refreshed.state === 'missing' && isExpired) {
+                return { state: 'expired', error: 'Access token expired' };
+            }
+            return refreshed;
+        }
+
+        return { state: 'ok', token: credential.accessToken };
+    }
+
+    /**
+     * 获取指定账号的 access_token 状态
+     */
+    async getAccessTokenStatusForAccount(email: string): Promise<AccessTokenResult> {
+        const credential = await credentialStorage.getCredentialForAccount(email);
+        if (!credential) {
+            return { state: 'missing' };
+        }
+
+        // 检查是否过期（提前 5 分钟刷新）
+        const expiresAt = new Date(credential.expiresAt);
+        const now = new Date();
+        const bufferTime = 5 * 60 * 1000; // 5 分钟
+        const isExpired = expiresAt.getTime() <= now.getTime();
+
+        if (expiresAt.getTime() - now.getTime() < bufferTime) {
+            logger.info(`[OAuthService] Token expiring soon for ${email}, refreshing...`);
+            const refreshed = await this.refreshAccessTokenDetailedForAccount(email);
             if (refreshed.state === 'missing' && isExpired) {
                 return { state: 'expired', error: 'Access token expired' };
             }
@@ -437,6 +467,10 @@ class OAuthService {
                 const lowered = errorText.toLowerCase();
                 if (lowered.includes('invalid_grant')) {
                     logger.warn('[OAuthService] Refresh token invalid (invalid_grant)');
+                    // Mark the account as invalid
+                    if (credential.email) {
+                        await credentialStorage.markAccountInvalid(credential.email, true);
+                    }
                     return { state: 'invalid_grant', error: errorText };
                 }
                 const message = `Token refresh failed: ${response.status} - ${errorText}`;
@@ -458,6 +492,58 @@ class OAuthService {
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             logger.error(`[OAuthService] Token refresh failed: ${err.message}`);
+            return { state: 'refresh_failed', error: err.message };
+        }
+    }
+
+    private async refreshAccessTokenDetailedForAccount(email: string): Promise<AccessTokenResult> {
+        const credential = await credentialStorage.getCredentialForAccount(email);
+        if (!credential || !credential.refreshToken) {
+            logger.warn(`[OAuthService] No refresh token available for ${email}`);
+            return { state: 'missing' };
+        }
+
+        try {
+            const response = await fetch(TOKEN_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    client_id: ANTIGRAVITY_CLIENT_ID,
+                    client_secret: ANTIGRAVITY_CLIENT_SECRET,
+                    refresh_token: credential.refreshToken,
+                    grant_type: 'refresh_token',
+                }).toString(),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                const lowered = errorText.toLowerCase();
+                if (lowered.includes('invalid_grant')) {
+                    logger.warn(`[OAuthService] Refresh token invalid (invalid_grant) for ${email}`);
+                    await credentialStorage.markAccountInvalid(email, true);
+                    return { state: 'invalid_grant', error: errorText };
+                }
+                const message = `Token refresh failed: ${response.status} - ${errorText}`;
+                logger.error(`[OAuthService] ${message}`);
+                return { state: 'refresh_failed', error: message };
+            }
+
+            const data = await response.json() as {
+                access_token: string;
+                expires_in: number;
+            };
+
+            const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
+            await credentialStorage.updateAccessTokenForAccount(email, data.access_token, expiresAt);
+
+            logger.info(`[OAuthService] Access token refreshed for ${email}`);
+            return { state: 'ok', token: data.access_token };
+
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error(`[OAuthService] Token refresh failed for ${email}: ${err.message}`);
             return { state: 'refresh_failed', error: err.message };
         }
     }

@@ -94,8 +94,7 @@
 
 .auto-trigger-compact {
     padding: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
+    width: 100%;
 }
 
 /* Status Card */
@@ -116,33 +115,81 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    flex-wrap: wrap;
     gap: 12px;
+    width: 100%;
 }
 
 .at-auth-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.at-auth-info-clickable {
+    cursor: pointer;
+}
+
+.at-auth-info-clickable:hover {
+    color: var(--vscode-foreground);
 }
 
 .at-auth-icon {
-    font-size: 20px;
+    font-size: 18px;
+    flex-shrink: 0;
 }
 
 .at-auth-text {
-    font-weight: 500;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .at-auth-email {
     color: var(--vscode-descriptionForeground);
     font-size: 13px;
-    margin-left: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.8;
 }
 
 .at-auth-actions {
     display: flex;
     gap: 8px;
+    flex-shrink: 0;
+}
+
+.account-count-badge {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: rgba(0, 122, 204, 0.18);
+    color: var(--vscode-textLink-foreground);
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+
+/* 下拉箭头按钮 */
+.quota-account-dropdown-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--vscode-descriptionForeground);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 2px 6px;
+    margin-left: 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    vertical-align: middle;
+}
+
+.quota-account-dropdown-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--vscode-foreground);
+    border-color: var(--vscode-panel-border);
 }
 
 /* Status Grid */
@@ -677,6 +724,22 @@
     font-weight: 500;
 }
 
+.at-history-account {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 6px;
+    background: rgba(0, 122, 204, 0.18);
+    color: var(--vscode-textLink-foreground);
+    font-weight: 600;
+    display: inline-block;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
 .at-history-type-manual {
     background: rgba(33, 150, 243, 0.15);
     color: #4dabf7;
@@ -709,6 +772,11 @@
 
 .modal-content-medium {
     max-width: 550px;
+}
+
+/* Ensure revoke modal appears above account manage modal */
+#at-revoke-modal {
+    z-index: 3000;
 }
 
 /* ========================================
@@ -894,16 +962,6 @@
     margin-left: 12px;
 }
 
-/* Update auth row for multi-account layout */
-.at-auth-row {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.at-auth-row .at-auth-info {
-    gap: 10px;
-}
 
 /* ========================================
    Schedule Section

@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.0]
+
+### Added
+- **Auto Wake-up**: Multi-account selection for scheduled/auto wake-ups and manual tests.
+- **Account Management**: New account management modal with reauthorize/remove actions and account status badges.
+
+### Changed
+- **Authorized UI**: Consolidated authorized card layout with account dropdown and clickable status area.
+- **Trigger History**: History entries now show account badges for easier attribution.
+
 ## [1.7.24]
 
 ### Fixed

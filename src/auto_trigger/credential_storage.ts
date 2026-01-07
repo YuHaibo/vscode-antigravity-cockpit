@@ -34,6 +34,7 @@ class CredentialStorage {
     private secretStorage?: vscode.SecretStorage;
     private globalState?: vscode.Memento;
     private initialized = false;
+    private migrationTask?: Promise<void>;
 
     /**
      * 初始化存储服务
@@ -45,8 +46,8 @@ class CredentialStorage {
         this.initialized = true;
         logger.info('[CredentialStorage] Initialized');
 
-        // Trigger migration check (async, non-blocking)
-        this.migrateFromLegacy().catch(err => {
+        // Trigger migration check (async), keep a handle for callers to await.
+        this.migrationTask = this.migrateFromLegacy().catch(err => {
             logger.error(`[CredentialStorage] Migration failed: ${err.message}`);
         });
     }
@@ -57,6 +58,15 @@ class CredentialStorage {
     private ensureInitialized(): void {
         if (!this.initialized || !this.secretStorage || !this.globalState) {
             throw new Error('CredentialStorage not initialized. Call initialize() first.');
+        }
+    }
+
+    /**
+     * Ensure legacy credentials migration completes before reading auth state.
+     */
+    private async ensureMigrated(): Promise<void> {
+        if (this.migrationTask) {
+            await this.migrationTask;
         }
     }
 
@@ -176,12 +186,64 @@ class CredentialStorage {
     }
 
     /**
+     * Mark an account as invalid (refresh token failed)
+     */
+    async markAccountInvalid(email: string, invalid: boolean = true): Promise<void> {
+        const storage = await this.getCredentialsStorage();
+        
+        if (!(email in storage.accounts)) {
+            logger.warn(`[CredentialStorage] Account ${email} not found for marking invalid`);
+            return;
+        }
+
+        storage.accounts[email].isInvalid = invalid;
+        await this.saveCredentialsStorage(storage);
+        
+        logger.info(`[CredentialStorage] Account ${email} marked as ${invalid ? 'invalid' : 'valid'}`);
+    }
+
+    /**
+     * Clear invalid status when re-authorization succeeds
+     */
+    async clearAccountInvalid(email: string): Promise<void> {
+        await this.markAccountInvalid(email, false);
+    }
+
+    /**
      * Set the active account
+     * Also syncs to legacy key for backward compatibility with older versions
      */
     async setActiveAccount(email: string | null): Promise<void> {
         this.ensureInitialized();
         await this.globalState!.update(ACTIVE_ACCOUNT_KEY, email);
         logger.info(`[CredentialStorage] Active account set to: ${email || 'none'}`);
+
+        // Backward compatibility: sync to legacy key so older versions can read it
+        await this.syncToLegacyKey(email);
+    }
+
+    /**
+     * Sync active account's credential to legacy key for backward compatibility
+     */
+    private async syncToLegacyKey(email: string | null): Promise<void> {
+        try {
+            if (!email) {
+                // No active account, clear legacy key
+                await this.secretStorage!.delete(LEGACY_CREDENTIAL_KEY);
+                logger.info('[CredentialStorage] Legacy key cleared (no active account)');
+                return;
+            }
+
+            const credential = await this.getCredentialForAccount(email);
+            if (credential) {
+                // Write to legacy key so older versions can read it
+                await this.secretStorage!.store(LEGACY_CREDENTIAL_KEY, JSON.stringify(credential));
+                logger.info(`[CredentialStorage] Synced ${email} to legacy key for backward compatibility`);
+            }
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.warn(`[CredentialStorage] Failed to sync to legacy key: ${err.message}`);
+        }
     }
 
     /**
@@ -196,6 +258,7 @@ class CredentialStorage {
      * Get all account info for UI display
      */
     async getAccountInfoList(): Promise<AccountInfo[]> {
+        await this.ensureMigrated();
         const storage = await this.getCredentialsStorage();
         const activeAccount = await this.getActiveAccount();
 
@@ -203,6 +266,7 @@ class CredentialStorage {
             email,
             isActive: email === activeAccount,
             expiresAt: credential.expiresAt,
+            isInvalid: credential.isInvalid,
         }));
     }
 
@@ -271,6 +335,9 @@ class CredentialStorage {
         const activeAccount = await this.getActiveAccount();
         if (!activeAccount) {
             await this.setActiveAccount(credential.email);
+        } else if (activeAccount === credential.email) {
+            // If updating active account, sync to legacy key
+            await this.syncToLegacyKey(credential.email);
         }
 
         logger.info(`[CredentialStorage] Credential saved for ${credential.email}`);
@@ -280,6 +347,7 @@ class CredentialStorage {
      * 获取 OAuth 凭证 (Returns active account's credential)
      */
     async getCredential(): Promise<OAuthCredential | null> {
+        await this.ensureMigrated();
         const activeAccount = await this.getActiveAccount();
         if (!activeAccount) {
             // Check if there are any accounts
@@ -316,6 +384,7 @@ class CredentialStorage {
      * 检查是否有有效凭证
      */
     async hasValidCredential(): Promise<boolean> {
+        await this.ensureMigrated();
         const credential = await this.getCredential();
         if (!credential) {
             return false;
@@ -333,6 +402,7 @@ class CredentialStorage {
      * 获取授权状态 (includes all accounts)
      */
     async getAuthorizationStatus(): Promise<AuthorizationStatus> {
+        await this.ensureMigrated();
         const credential = await this.getCredential();
         const accounts = await this.getAccountInfoList();
         const activeAccount = await this.getActiveAccount();
@@ -375,7 +445,52 @@ class CredentialStorage {
         storage.accounts[activeAccount] = credential;
         await this.saveCredentialsStorage(storage);
 
+        // Sync to legacy key for backward compatibility
+        await this.syncToLegacyKey(activeAccount);
+
         logger.info(`[CredentialStorage] Access token updated for ${activeAccount}`);
+    }
+
+    /**
+     * 更新指定账号的 access_token（多账号）
+     */
+    async updateAccessTokenForAccount(email: string, accessToken: string, expiresAt: string): Promise<void> {
+        const credential = await this.getCredentialForAccount(email);
+        if (!credential) {
+            throw new Error(`No credential to update for ${email}`);
+        }
+
+        credential.accessToken = accessToken;
+        credential.expiresAt = expiresAt;
+
+        const storage = await this.getCredentialsStorage();
+        storage.accounts[email] = credential;
+        await this.saveCredentialsStorage(storage);
+
+        // Sync to legacy key if this is the active account
+        const activeAccount = await this.getActiveAccount();
+        if (activeAccount === email) {
+            await this.syncToLegacyKey(email);
+        }
+
+        logger.info(`[CredentialStorage] Access token updated for ${email}`);
+    }
+
+    /**
+     * 更新指定账号的 projectId
+     */
+    async updateProjectIdForAccount(email: string, projectId: string): Promise<void> {
+        const credential = await this.getCredentialForAccount(email);
+        if (!credential) {
+            throw new Error(`No credential to update for ${email}`);
+        }
+
+        credential.projectId = projectId;
+        const storage = await this.getCredentialsStorage();
+        storage.accounts[email] = credential;
+        await this.saveCredentialsStorage(storage);
+
+        logger.info(`[CredentialStorage] ProjectId updated for ${email}`);
     }
 
     /**

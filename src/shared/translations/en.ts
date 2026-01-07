@@ -328,6 +328,10 @@ export const en = {
     'autoTrigger.saved': 'Schedule settings saved',
     'autoTrigger.nextTrigger': 'Next Trigger',
     'autoTrigger.modelSection': '🤖 Model Selection',
+    'autoTrigger.accountSection': 'Accounts',
+    'autoTrigger.accountHint': 'Select accounts to use for auto wake-ups (multi-select).',
+    'autoTrigger.testAccountSection': 'Test Accounts',
+    'autoTrigger.testAccountHint': 'Select accounts to use for manual test (multi-select).',
     'autoTrigger.selectModels': 'Select Models to Trigger',
     'autoTrigger.modelsHint': 'Within the same quota group, select only one model; choosing multiple models that share the same quota will consume more quota. Multiple models will be triggered sequentially.',
     'autoTrigger.noModels': 'No models available, please check connection.',
@@ -384,6 +388,10 @@ export const en = {
     'autoTrigger.accountRemoved': 'Account removed: {email}',
     'autoTrigger.accountSwitched': 'Switched to account: {email}',
     'autoTrigger.accountDuplicate': 'Account {email} already exists',
+    'autoTrigger.manageAccounts': 'Manage Accounts',
+    'autoTrigger.reauthorizeSuccess': 'Re-authorization successful',
+    'autoTrigger.noAccounts': 'No accounts authorized',
+    'autoTrigger.tokenExpired': 'Expired',
 
     // Announcement
     'announcement.title': 'Notifications',

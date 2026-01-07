@@ -318,6 +318,10 @@ export const zhCN = {
     'autoTrigger.saved': '调度设置已保存',
     'autoTrigger.nextTrigger': '下次触发',
     'autoTrigger.modelSection': '🤖 模型选择',
+    'autoTrigger.accountSection': '账号选择',
+    'autoTrigger.accountHint': '可多选，自动唤醒将依次使用这些账号。',
+    'autoTrigger.testAccountSection': '测试账号',
+    'autoTrigger.testAccountHint': '可多选，用这些账号进行测试。',
     'autoTrigger.selectModels': '选择要触发的模型',
     'autoTrigger.modelsHint': '建议在同一配额分组内只选择一个模型，重复选择同配额模型会消耗更多配额。多个模型将按顺序触发。',
     'autoTrigger.noModels': '无可用模型，请检查连接或点击重试。',
@@ -384,6 +388,10 @@ export const zhCN = {
     'autoTrigger.accountRemoved': '已移除账号: {email}',
     'autoTrigger.accountSwitched': '已切换至账号: {email}',
     'autoTrigger.accountDuplicate': '账号 {email} 已存在',
+    'autoTrigger.manageAccounts': '管理账号',
+    'autoTrigger.reauthorizeSuccess': '重新授权成功',
+    'autoTrigger.noAccounts': '暂无已授权账号',
+    'autoTrigger.tokenExpired': '已过期',
 
     // Announcement
     'announcement.title': '消息通知',

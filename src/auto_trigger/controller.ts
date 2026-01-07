@@ -146,6 +146,18 @@ class AutoTriggerController {
     }
 
     /**
+     * 撤销当前账号授权
+     */
+    async revokeActiveAccount(): Promise<void> {
+        const activeAccount = await credentialStorage.getActiveAccount();
+        if (!activeAccount) {
+            await this.revokeAuthorization();
+            return;
+        }
+        await this.removeAccount(activeAccount);
+    }
+
+    /**
      * 移除指定账号
      * @param email 要移除的账号邮箱
      */
@@ -181,6 +193,24 @@ class AutoTriggerController {
     }
 
     /**
+     * 重新授权指定账号（先切换到该账号再重新授权）
+     * @param email 要重新授权的账号邮箱
+     */
+    async reauthorizeAccount(email: string): Promise<void> {
+        // 先切换到该账号
+        await credentialStorage.setActiveAccount(email);
+        logger.info(`[AutoTriggerController] Reauthorizing account: ${email}`);
+        
+        // 执行重新授权流程
+        const success = await oauthService.startAuthorization();
+        if (!success) {
+            throw new Error('Reauthorization cancelled or failed');
+        }
+        
+        this.notifyStateUpdate();
+    }
+
+    /**
      * 保存调度配置
      */
     async saveSchedule(config: ScheduleConfig): Promise<void> {
@@ -205,8 +235,8 @@ class AutoTriggerController {
             logger.info('[AutoTriggerController] Schedule saved, wakeOnReset mode enabled');
         } else if (config.enabled) {
             // 定时/Crontab 模式
-            const hasAuth = await credentialStorage.hasValidCredential();
-            if (!hasAuth) {
+            const accounts = await this.resolveAccountsFromList(config.selectedAccounts);
+            if (accounts.length === 0) {
                 throw new Error('请先完成授权');
             }
             schedulerService.setSchedule(config, () => this.executeTrigger());
@@ -221,12 +251,46 @@ class AutoTriggerController {
     }
 
     /**
+     * 解析可用账号列表（多账号）
+     */
+    private async resolveAccountsFromList(requestedAccounts?: string[]): Promise<string[]> {
+        const allCredentials = await credentialStorage.getAllCredentials();
+        const allEmails = Object.keys(allCredentials);
+        if (allEmails.length === 0) {
+            return [];
+        }
+
+        const requested = (requestedAccounts || []).filter(email => email in allCredentials);
+        const candidates = requested.length > 0 ? requested : [];
+
+        if (candidates.length === 0) {
+            const active = await credentialStorage.getActiveAccount();
+            if (active && active in allCredentials) {
+                candidates.push(active);
+            }
+        }
+
+        if (candidates.length === 0) {
+            candidates.push(allEmails[0]);
+        }
+
+        return candidates.filter(email => Boolean(allCredentials[email]?.refreshToken));
+    }
+
+    /**
+     * 获取调度触发账号列表（多账号）
+     */
+    private async resolveScheduleAccounts(schedule: ScheduleConfig): Promise<string[]> {
+        return this.resolveAccountsFromList(schedule.selectedAccounts);
+    }
+
+    /**
      * 手动触发一次
      * @param models 可选的自定义模型列表
      */
-    async testTrigger(models?: string[]): Promise<void> {
-        const hasAuth = await credentialStorage.hasValidCredential();
-        if (!hasAuth) {
+    async testTrigger(models?: string[], accounts?: string[]): Promise<void> {
+        const targetAccounts = await this.resolveAccountsFromList(accounts);
+        if (targetAccounts.length === 0) {
             vscode.window.showErrorMessage('请先完成授权');
             return;
         }
@@ -244,12 +308,24 @@ class AutoTriggerController {
             selectedModels = schedule.selectedModels || ['gemini-3-flash'];
         }
 
-        const result = await triggerService.trigger(selectedModels, 'manual', undefined, 'manual');
+        let anySuccess = false;
+        let totalDuration = 0;
+        let firstError: string | undefined;
 
-        if (result.success) {
-            vscode.window.showInformationMessage(`✅ 触发成功！耗时 ${result.duration}ms`);
+        for (const email of targetAccounts) {
+            const result = await triggerService.trigger(selectedModels, 'manual', undefined, 'manual', email);
+            totalDuration += result.duration || 0;
+            if (result.success) {
+                anySuccess = true;
+            } else if (!firstError) {
+                firstError = result.message;
+            }
+        }
+
+        if (anySuccess) {
+            vscode.window.showInformationMessage(`✅ 触发成功！耗时 ${totalDuration}ms`);
         } else {
-            vscode.window.showErrorMessage(`❌ 触发失败: ${result.message}`);
+            vscode.window.showErrorMessage(`❌ 触发失败: ${firstError || 'Unknown error'}`);
         }
 
         // 通知 UI 更新
@@ -261,9 +337,13 @@ class AutoTriggerController {
      * @param models 可选的自定义模型列表，如果不传则使用配置中的模型
      * @param customPrompt 可选的自定义唤醒词
      */
-    async triggerNow(models?: string[], customPrompt?: string): Promise<{ success: boolean; duration?: number; error?: string; response?: string }> {
-        const hasAuth = await credentialStorage.hasValidCredential();
-        if (!hasAuth) {
+    async triggerNow(
+        models?: string[],
+        customPrompt?: string,
+        accounts?: string[],
+    ): Promise<{ success: boolean; duration?: number; error?: string; response?: string }> {
+        const targetAccounts = await this.resolveAccountsFromList(accounts);
+        if (targetAccounts.length === 0) {
             return { success: false, error: '请先完成授权' };
         }
 
@@ -278,16 +358,32 @@ class AutoTriggerController {
             selectedModels = schedule.selectedModels || ['gemini-3-flash'];
         }
 
-        const result = await triggerService.trigger(selectedModels, 'manual', customPrompt, 'manual');
+        let anySuccess = false;
+        let totalDuration = 0;
+        let firstResponse: string | undefined;
+        let firstError: string | undefined;
+
+        for (const email of targetAccounts) {
+            const result = await triggerService.trigger(selectedModels, 'manual', customPrompt, 'manual', email);
+            totalDuration += result.duration || 0;
+            if (result.success) {
+                anySuccess = true;
+                if (!firstResponse) {
+                    firstResponse = result.message;
+                }
+            } else if (!firstError) {
+                firstError = result.message;
+            }
+        }
 
         // 通知 UI 更新
         this.notifyStateUpdate();
 
         return {
-            success: result.success,
-            duration: result.duration,
-            error: result.success ? undefined : result.message,
-            response: result.success ? result.message : undefined,  // AI 回复内容
+            success: anySuccess,
+            duration: totalDuration || undefined,
+            error: anySuccess ? undefined : (firstError || 'Unknown error'),
+            response: anySuccess ? firstResponse : undefined,  // AI 回复内容
         };
     }
 
@@ -309,17 +405,26 @@ class AutoTriggerController {
             selectedModels: ['gemini-3-flash'],
         });
         const triggerSource = schedule.crontab ? 'crontab' : 'scheduled';
-        const result = await triggerService.trigger(
-            schedule.selectedModels,
-            'auto',
-            schedule.customPrompt,
-            triggerSource,
-        );
+        const accounts = await this.resolveScheduleAccounts(schedule);
+        if (accounts.length === 0) {
+            logger.warn('[AutoTriggerController] Scheduled trigger skipped: no valid accounts');
+            return;
+        }
 
-        if (result.success) {
-            logger.info('[AutoTriggerController] Scheduled trigger executed successfully');
-        } else {
-            logger.error(`[AutoTriggerController] Scheduled trigger failed: ${result.message}`);
+        for (const email of accounts) {
+            const result = await triggerService.trigger(
+                schedule.selectedModels,
+                'auto',
+                schedule.customPrompt,
+                triggerSource,
+                email,
+            );
+
+            if (result.success) {
+                logger.info(`[AutoTriggerController] Scheduled trigger executed successfully for ${email}`);
+            } else {
+                logger.error(`[AutoTriggerController] Scheduled trigger failed for ${email}: ${result.message}`);
+            }
         }
 
         // 通知 UI 更新
@@ -354,9 +459,8 @@ class AutoTriggerController {
             return;
         }
 
-        // 检查是否已授权
-        const hasAuth = await credentialStorage.hasValidCredential();
-        if (!hasAuth) {
+        const accounts = await this.resolveScheduleAccounts(schedule);
+        if (accounts.length === 0) {
             logger.debug('[AutoTriggerController] Wake on reset: Not authorized, skipping');
             return;
         }
@@ -410,12 +514,14 @@ class AutoTriggerController {
 
         // 触发唤醒
         logger.info(`[AutoTriggerController] Wake on reset: Triggering for models: ${modelsToTrigger.join(', ')}`);
-        const result = await triggerService.trigger(modelsToTrigger, 'auto', schedule.customPrompt, 'quota_reset');
+        for (const email of accounts) {
+            const result = await triggerService.trigger(modelsToTrigger, 'auto', schedule.customPrompt, 'quota_reset', email);
 
-        if (result.success) {
-            logger.info('[AutoTriggerController] Wake on reset: Trigger successful');
-        } else {
-            logger.error(`[AutoTriggerController] Wake on reset: Trigger failed: ${result.message}`);
+            if (result.success) {
+                logger.info(`[AutoTriggerController] Wake on reset: Trigger successful for ${email}`);
+            } else {
+                logger.error(`[AutoTriggerController] Wake on reset: Trigger failed for ${email}: ${result.message}`);
+            }
         }
 
         // 通知 UI 更新
@@ -522,7 +628,7 @@ class AutoTriggerController {
                 break;
 
             case 'auto_trigger_test_trigger':
-                await this.testTrigger(message.data?.models);
+                await this.testTrigger(message.data?.models, message.data?.accounts as string[] | undefined);
                 break;
 
             default:

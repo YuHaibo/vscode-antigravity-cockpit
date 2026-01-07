@@ -31,7 +31,11 @@
         'chat_23310',
     ]);
     let selectedModels = [];  // 从 state.schedule.selectedModels 获取
+    let selectedAccounts = [];  // 从 state.schedule.selectedAccounts 获取
+    let availableAccounts = [];
+    let activeAccountEmail = '';
     let testSelectedModels = [];
+    let testSelectedAccounts = [];
 
     // 配置状态
     let configEnabled = false;
@@ -237,7 +241,12 @@
             testSelectedModels = [];
         }
 
+        if (testSelectedAccounts.length === 0 && activeAccountEmail) {
+            testSelectedAccounts = [activeAccountEmail];
+        }
+
         renderTestModels();
+        renderTestAccounts();
         document.getElementById('at-test-modal')?.classList.remove('hidden');
     }
 
@@ -254,16 +263,58 @@
         document.getElementById('at-history-modal')?.classList.add('hidden');
     }
 
+    let pendingRevokeEmail = '';
+    let revokeModalDefaultText = '';
+
     function openRevokeModal() {
-        document.getElementById('at-revoke-modal')?.classList.remove('hidden');
+        const modal = document.getElementById('at-revoke-modal');
+        if (!modal) return;
+        const textEl = modal.querySelector('p');
+        if (textEl && !revokeModalDefaultText) {
+            revokeModalDefaultText = textEl.textContent || '';
+        }
+        if (!pendingRevokeEmail) {
+            if (textEl) {
+                textEl.textContent = revokeModalDefaultText || t('autoTrigger.revokeConfirm');
+            }
+        }
+        modal.classList.remove('hidden');
+    }
+
+    function openRevokeModalForEmail(email) {
+        pendingRevokeEmail = String(email || '');
+        const modal = document.getElementById('at-revoke-modal');
+        if (modal) {
+            const textEl = modal.querySelector('p');
+            if (textEl && !revokeModalDefaultText) {
+                revokeModalDefaultText = textEl.textContent || '';
+            }
+            const confirmText = t('autoTrigger.confirmRemove') || t('autoTrigger.revokeConfirm');
+            if (textEl) {
+                textEl.textContent = confirmText.replace('{email}', pendingRevokeEmail);
+            }
+        }
+        openRevokeModal();
     }
 
     function closeRevokeModal() {
-        document.getElementById('at-revoke-modal')?.classList.add('hidden');
+        const modal = document.getElementById('at-revoke-modal');
+        if (modal) {
+            const textEl = modal.querySelector('p');
+            if (textEl && revokeModalDefaultText) {
+                textEl.textContent = revokeModalDefaultText;
+            }
+            modal.classList.add('hidden');
+        }
+        pendingRevokeEmail = '';
     }
 
     function confirmRevoke() {
-        vscode.postMessage({ command: 'autoTrigger.revoke' });
+        if (pendingRevokeEmail) {
+            vscode.postMessage({ command: 'autoTrigger.removeAccount', email: pendingRevokeEmail });
+        } else {
+            vscode.postMessage({ command: 'autoTrigger.revoke' });
+        }
         closeRevokeModal();
     }
 
@@ -282,6 +333,12 @@
         configIntervalStart = s.intervalStartTime || '07:00';
         configIntervalEnd = s.intervalEndTime || '22:00';
         selectedModels = s.selectedModels || ['gemini-3-flash'];
+        if (Array.isArray(s.selectedAccounts)) {
+            selectedAccounts = s.selectedAccounts.slice();
+        }
+        if (selectedAccounts.length === 0 && activeAccountEmail) {
+            selectedAccounts = [activeAccountEmail];
+        }
 
         document.getElementById('at-enable-schedule').checked = configEnabled;
         document.getElementById('at-mode-select').value = configMode;
@@ -310,6 +367,7 @@
             crontabInput.value = s.crontab || '';
         }
         document.getElementById('at-interval-end').value = configIntervalEnd;
+        renderConfigAccounts();
     }
 
     function saveConfig() {
@@ -336,6 +394,9 @@
             intervalStartTime: configIntervalStart,
             intervalEndTime: configIntervalEnd,
             selectedModels: selectedModels.length > 0 ? selectedModels : ['gemini-3-flash'],
+            selectedAccounts: selectedAccounts.length > 0
+                ? selectedAccounts
+                : (activeAccountEmail ? [activeAccountEmail] : []),
             crontab: isCrontabMode ? (crontabValue || undefined) : undefined,
             wakeOnReset: wakeOnReset,
             customPrompt: document.getElementById('at-custom-prompt')?.value.trim() || undefined,
@@ -359,6 +420,14 @@
             .filter(Boolean);
     }
 
+    function getTestSelectedAccountsFromDom() {
+        const container = document.getElementById('at-test-accounts');
+        if (!container) return [];
+        return Array.from(container.querySelectorAll('.at-model-item.selected'))
+            .map(el => el.dataset.email)
+            .filter(Boolean);
+    }
+
     function runTest() {
         if (isTestRunning) return;
 
@@ -371,6 +440,14 @@
             // 使用第一个可用模型作为默认
             const defaultModel = availableModels.length > 0 ? availableModels[0].id : 'gemini-3-flash';
             testSelectedModels = [defaultModel];
+        }
+
+        const pickedAccounts = getTestSelectedAccountsFromDom();
+        if (pickedAccounts.length > 0) {
+            testSelectedAccounts = pickedAccounts;
+        }
+        if (testSelectedAccounts.length === 0 && activeAccountEmail) {
+            testSelectedAccounts = [activeAccountEmail];
         }
 
         // 获取自定义唤醒词
@@ -394,6 +471,7 @@
             command: 'autoTrigger.test',
             models: [...testSelectedModels],
             customPrompt: customPrompt,
+            accounts: [...testSelectedAccounts],
         });
     }
 
@@ -608,6 +686,37 @@
         });
     }
 
+    function renderConfigAccounts() {
+        const container = document.getElementById('at-config-accounts');
+        if (!container) return;
+
+        if (!availableAccounts || availableAccounts.length === 0) {
+            container.innerHTML = `<div class="at-no-data">${t('autoTrigger.noAccounts') || '暂无已授权账号'}</div>`;
+            return;
+        }
+
+        container.innerHTML = availableAccounts.map(email => {
+            const isSelected = selectedAccounts.includes(email);
+            return `<div class="at-model-item ${isSelected ? 'selected' : ''}" data-email="${email}">${email}</div>`;
+        }).join('');
+
+        container.querySelectorAll('.at-model-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const email = item.dataset.email;
+                const idx = selectedAccounts.indexOf(email);
+                if (idx >= 0) {
+                    if (selectedAccounts.length > 1) {
+                        selectedAccounts.splice(idx, 1);
+                        item.classList.remove('selected');
+                    }
+                } else {
+                    selectedAccounts.push(email);
+                    item.classList.add('selected');
+                }
+            });
+        });
+    }
+
     function renderTestModels() {
         const container = document.getElementById('at-test-models');
         if (!container) return;
@@ -637,6 +746,41 @@
         });
     }
 
+    function renderTestAccounts() {
+        const container = document.getElementById('at-test-accounts');
+        if (!container) return;
+
+        if (!availableAccounts || availableAccounts.length === 0) {
+            container.innerHTML = `<div class="at-no-data">${t('autoTrigger.noAccounts') || '暂无已授权账号'}</div>`;
+            return;
+        }
+
+        if (testSelectedAccounts.length === 0 && activeAccountEmail) {
+            testSelectedAccounts = [activeAccountEmail];
+        }
+
+        container.innerHTML = availableAccounts.map(email => {
+            const isSelected = testSelectedAccounts.includes(email);
+            return `<div class="at-model-item ${isSelected ? 'selected' : ''}" data-email="${email}">${email}</div>`;
+        }).join('');
+
+        container.querySelectorAll('.at-model-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const email = item.dataset.email;
+                const idx = testSelectedAccounts.indexOf(email);
+                if (idx >= 0) {
+                    if (testSelectedAccounts.length > 1) {
+                        testSelectedAccounts.splice(idx, 1);
+                        item.classList.remove('selected');
+                    }
+                } else {
+                    testSelectedAccounts.push(email);
+                    item.classList.add('selected');
+                }
+            });
+        });
+    }
+
     function renderHistory() {
         const container = document.getElementById('at-history-list');
         if (!container) return;
@@ -653,6 +797,9 @@
             const timeStr = date.toLocaleString();
             const icon = trigger.success ? '✅' : '❌';
             const statusText = trigger.success ? t('autoTrigger.success') : t('autoTrigger.failed');
+            const accountBadge = trigger.accountEmail
+                ? `<span class="at-history-account" title="${escapeHtml(trigger.accountEmail)}">${escapeHtml(trigger.accountEmail)}</span>`
+                : '';
 
             // 显示请求内容和响应
             let contentHtml = '';
@@ -687,7 +834,7 @@
                 <div class="at-history-item">
                     <span class="at-history-icon">${icon}</span>
                     <div class="at-history-info">
-                        <div class="at-history-time">${timeStr}${typeBadge}</div>
+                        <div class="at-history-time">${timeStr}${typeBadge}${accountBadge}</div>
                         ${contentHtml}
                     </div>
                     ${trigger.duration ? `<span class="at-history-duration">${trigger.duration}ms</span>` : ''}
@@ -886,6 +1033,23 @@
         if (state.schedule?.selectedModels) {
             selectedModels = state.schedule.selectedModels;
         }
+        const accounts = state.authorization?.accounts || [];
+        availableAccounts = accounts.map(acc => acc.email).filter(Boolean);
+        activeAccountEmail = state.authorization?.activeAccount || state.authorization?.email || availableAccounts[0] || '';
+        if (Array.isArray(state.schedule?.selectedAccounts) && state.schedule.selectedAccounts.length > 0) {
+            selectedAccounts = state.schedule.selectedAccounts.filter(email => availableAccounts.includes(email));
+            if (selectedAccounts.length === 0 && activeAccountEmail) {
+                selectedAccounts = [activeAccountEmail];
+            }
+        } else if (activeAccountEmail) {
+            selectedAccounts = [activeAccountEmail];
+        }
+        if (testSelectedAccounts.length > 0) {
+            testSelectedAccounts = testSelectedAccounts.filter(email => availableAccounts.includes(email));
+        }
+        if (testSelectedAccounts.length === 0 && activeAccountEmail) {
+            testSelectedAccounts = [activeAccountEmail];
+        }
         if (availableModels.length > 0) {
             selectedModels = selectedModels.filter(id => availableModels.some(model => model.id === id));
             if (selectedModels.length === 0) {
@@ -899,6 +1063,7 @@
         updateAuthUI(state.authorization);
         updateStatusUI(state);
         updateHistoryCount(state.recentTriggers?.length || 0);
+        renderConfigAccounts();
     }
 
     function filterAvailableModels(models) {
@@ -934,62 +1099,55 @@
         const accounts = auth?.accounts || [];
         const hasAccounts = accounts.length > 0;
         const activeAccount = auth?.activeAccount;
+        const activeEmail = activeAccount || auth?.email || '';
 
-        if (hasAccounts) {
-            // Multi-account view
-            const accountListHtml = accounts.map(acc => {
-                const isActive = acc.email === activeAccount;
-                return `
-                    <div class="at-account-item ${isActive ? 'active' : ''}" data-email="${acc.email}">
-                        <div class="at-account-info">
-                            <span class="at-account-icon">${isActive ? '✅' : '👤'}</span>
-                            <span class="at-account-email">${acc.email}</span>
-                            ${isActive ? `<span class="at-account-badge">${t('autoTrigger.accountActive')}</span>` : ''}
-                        </div>
-                        <div class="at-account-actions">
-                            ${!isActive ? `<button class="at-btn at-btn-small at-btn-secondary at-switch-account-btn" data-email="${acc.email}">${t('autoTrigger.switchAccount')}</button>` : ''}
-                            <button class="at-btn at-btn-small at-btn-danger at-remove-account-btn" data-email="${acc.email}">${t('autoTrigger.removeAccount')}</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
+        if (hasAccounts || auth?.isAuthorized) {
+            // 恢复原来的单行布局 + 下拿按钮
+            const extraCount = Math.max(accounts.length - 1, 0);
+            const accountCountBadge = extraCount > 0
+                ? `<span class="account-count-badge" title="${t('autoTrigger.manageAccounts')}">+${extraCount}</span>`
+                : '';
+            const dropdownArrow = accounts.length > 0
+                ? `<button id="at-account-dropdown-btn" class="quota-account-dropdown-btn" title="${t('autoTrigger.manageAccounts')}">▼</button>`
+                : '';
 
             authRow.innerHTML = `
-                <div class="at-auth-header">
-                    <span class="at-auth-title">${t('autoTrigger.accountList')}</span>
-                    <button id="at-add-account-btn" class="at-btn at-btn-primary at-btn-small">➕ ${t('autoTrigger.addAccount')}</button>
+                <div class="at-auth-info at-auth-info-clickable" title="${t('autoTrigger.manageAccounts')}">
+                    <span class="at-auth-icon">✅</span>
+                    <span class="at-auth-text">${t('autoTrigger.authorized')}</span>
+                    <span class="at-auth-email">${activeEmail}</span>
+                    ${accountCountBadge}
+                    ${dropdownArrow}
                 </div>
-                <div class="at-account-list">
-                    ${accountListHtml}
+                <div class="at-auth-actions">
+                    <button id="at-reauth-btn" class="at-btn at-btn-secondary">${t('autoTrigger.reauthorizeBtn')}</button>
+                    <button id="at-revoke-btn" class="at-btn at-btn-danger">${t('autoTrigger.revokeBtn')}</button>
                 </div>
             `;
-
             statusGrid?.classList.remove('hidden');
             actions?.classList.remove('hidden');
 
-            // Bind add account button
-            document.getElementById('at-add-account-btn')?.addEventListener('click', () => {
-                vscode.postMessage({ command: 'autoTrigger.addAccount' });
+            // 绑定按钮事件
+            document.getElementById('at-reauth-btn')?.addEventListener('click', () => {
+                vscode.postMessage({ command: 'autoTrigger.authorize' });
+            });
+            document.getElementById('at-revoke-btn')?.addEventListener('click', () => {
+                openRevokeModal();
             });
 
-            // Bind switch account buttons
-            authRow.querySelectorAll('.at-switch-account-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const email = btn.dataset.email;
-                    vscode.postMessage({ command: 'autoTrigger.switchAccount', email });
-                });
+            // 点击授权信息区域打开账号管理弹框
+            authRow.querySelector('.at-auth-info')?.addEventListener('click', () => {
+                if (typeof window.openAccountManageModal === 'function') {
+                    window.openAccountManageModal();
+                }
             });
 
-            // Bind remove account buttons
-            authRow.querySelectorAll('.at-remove-account-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const email = btn.dataset.email;
-                    if (confirm(t('autoTrigger.confirmRemove'))) {
-                        vscode.postMessage({ command: 'autoTrigger.removeAccount', email });
-                    }
-                });
+            // 绑定下拉按钮 - 调用 dashboard.js 的账号管理弹框
+            document.getElementById('at-account-dropdown-btn')?.addEventListener('click', () => {
+                // 调用 dashboard.js 中定义的 openAccountManageModal
+                if (typeof window.openAccountManageModal === 'function') {
+                    window.openAccountManageModal();
+                }
             });
 
         } else {
@@ -1125,6 +1283,7 @@
         init,
         updateState,
     };
+    window.openRevokeModalForEmail = openRevokeModalForEmail;
 
     // 初始化
     if (document.readyState === 'loading') {

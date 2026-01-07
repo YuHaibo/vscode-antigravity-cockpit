@@ -341,6 +341,7 @@ export type WebviewMessageType =
     | 'autoTrigger.addAccount'
     | 'autoTrigger.removeAccount'
     | 'autoTrigger.switchAccount'
+    | 'autoTrigger.reauthorizeAccount'
     | 'autoTrigger.saveSchedule'
     | 'autoTrigger.test'
     | 'autoTrigger.validateCrontab'

@@ -703,6 +703,10 @@
                 authorizationStatus = message.data.authorization;
                 authorizedAvailable = Boolean(message.data.authorization?.isAuthorized);
                 updateQuotaAuthUI();
+                const modal = document.getElementById('account-manage-modal');
+                if (modal && !modal.classList.contains('hidden')) {
+                    renderAccountManageList();
+                }
             }
         }
 
@@ -794,59 +798,50 @@
         const accounts = auth?.accounts || [];
         const hasAccounts = accounts.length > 0;
         const activeAccount = auth?.activeAccount;
+        const activeEmail = activeAccount || (accounts.length > 0 ? accounts[0].email : null);
 
-        if (hasAccounts) {
-            // Multi-account view
-            const accountListHtml = accounts.map(acc => {
-                const isActive = acc.email === activeAccount;
-                return `
-                    <div class="quota-account-item ${isActive ? 'active' : ''}" data-email="${acc.email}">
-                        <div class="quota-account-info">
-                            <span class="quota-account-icon">${isActive ? '✅' : '👤'}</span>
-                            <span class="quota-account-email">${acc.email}</span>
-                            ${isActive ? `<span class="quota-account-badge">${i18n['autoTrigger.accountActive'] || 'Active'}</span>` : ''}
-                        </div>
-                        <div class="quota-account-actions">
-                            ${!isActive ? `<button class="at-btn at-btn-small at-btn-secondary quota-switch-account-btn" data-email="${acc.email}">${i18n['autoTrigger.switchAccount'] || 'Switch'}</button>` : ''}
-                            <button class="at-btn at-btn-small at-btn-danger quota-remove-account-btn" data-email="${acc.email}">${i18n['autoTrigger.removeAccount'] || 'Remove'}</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
+        if (hasAccounts && activeEmail) {
+            // 保持原有的单行布局，增加下拉箭头用于管理多账号
+            const hasMultipleAccounts = accounts.length > 1;
+            const extraCount = Math.max(accounts.length - 1, 0);
+            const accountCountBadge = extraCount > 0
+                ? `<span class="account-count-badge" title="${i18n['autoTrigger.manageAccounts'] || 'Manage Accounts'}">+${extraCount}</span>`
+                : '';
+            const dropdownArrow = `<button id="quota-account-dropdown-btn" class="quota-account-dropdown-btn" title="${i18n['autoTrigger.manageAccounts'] || 'Manage Accounts'}">▼</button>`;
+            
             row.innerHTML = `
-                <div class="quota-auth-header">
-                    <span class="quota-auth-title">${i18n['autoTrigger.accountList'] || 'Authorized Accounts'}</span>
-                    <button id="quota-add-account-btn" class="at-btn at-btn-primary at-btn-small">➕ ${i18n['autoTrigger.addAccount'] || 'Add Account'}</button>
+                <div class="quota-auth-info quota-auth-info-clickable" title="${i18n['autoTrigger.manageAccounts'] || 'Manage Accounts'}">
+                    <span class="quota-auth-icon">✅</span>
+                    <span class="quota-auth-text">${i18n['autoTrigger.authorized'] || 'Authorized'}</span>
+                    <span class="quota-auth-email">${activeEmail}</span>
+                    ${accountCountBadge}
+                    ${dropdownArrow}
                 </div>
-                <div class="quota-account-list">
-                    ${accountListHtml}
+                <div class="quota-auth-actions">
+                    <button id="quota-reauth-btn" class="at-btn at-btn-secondary">${i18n['autoTrigger.reauthorizeBtn'] || 'Reauthorize'}</button>
+                    <button id="quota-revoke-btn" class="at-btn at-btn-danger">${i18n['autoTrigger.revokeBtn'] || 'Revoke'}</button>
                 </div>
             `;
 
-            // Bind add account button
-            document.getElementById('quota-add-account-btn')?.addEventListener('click', () => {
-                vscode.postMessage({ command: 'autoTrigger.addAccount' });
+            // 点击授权信息区域打开账号管理弹框
+            row.querySelector('.quota-auth-info')?.addEventListener('click', () => {
+                openAccountManageModal();
             });
 
-            // Bind switch account buttons
-            row.querySelectorAll('.quota-switch-account-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const email = btn.dataset.email;
-                    vscode.postMessage({ command: 'autoTrigger.switchAccount', email });
-                });
+            // 绑定下拉箭头点击事件 - 打开账号管理弹框
+            document.getElementById('quota-account-dropdown-btn')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openAccountManageModal();
             });
 
-            // Bind remove account buttons
-            row.querySelectorAll('.quota-remove-account-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const email = btn.dataset.email;
-                    if (confirm(i18n['autoTrigger.confirmRemove'] || 'Are you sure you want to remove this account?')) {
-                        vscode.postMessage({ command: 'autoTrigger.removeAccount', email });
-                    }
-                });
+            // 重新授权当前活跃账号
+            document.getElementById('quota-reauth-btn')?.addEventListener('click', () => {
+                vscode.postMessage({ command: 'autoTrigger.reauthorizeAccount', email: activeEmail });
+            });
+
+            // 取消授权（只删除当前活跃账号，若只有一个账号则完全取消）
+            document.getElementById('quota-revoke-btn')?.addEventListener('click', () => {
+                document.getElementById('at-revoke-modal')?.classList.remove('hidden');
             });
         } else {
             // No accounts - show authorize button
@@ -863,6 +858,132 @@
                 vscode.postMessage({ command: 'autoTrigger.authorize' });
             });
         }
+    }
+
+    // ============ 账号管理弹框 ============
+
+    function openAccountManageModal() {
+        let modal = document.getElementById('account-manage-modal');
+        if (!modal) {
+            // 动态创建弹框
+            modal = document.createElement('div');
+            modal.id = 'account-manage-modal';
+            modal.className = 'modal hidden';
+            modal.innerHTML = `
+                <div class="modal-content account-manage-content">
+                    <div class="modal-header">
+                        <h3>${i18n['autoTrigger.manageAccounts'] || 'Manage Accounts'}</h3>
+                        <button class="close-btn" id="close-account-manage-modal">×</button>
+                    </div>
+                    <div class="modal-body" id="account-manage-body">
+                        <!-- 账号列表将在这里动态渲染 -->
+                    </div>
+                    <div class="modal-footer">
+                        <button id="add-new-account-btn" class="at-btn at-btn-primary">➕ ${i18n['autoTrigger.addAccount'] || 'Add Account'}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // 绑定关闭按钮
+            document.getElementById('close-account-manage-modal')?.addEventListener('click', closeAccountManageModal);
+            
+            // 点击背景关闭
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeAccountManageModal();
+            });
+
+            // 绑定添加账号按钮
+            document.getElementById('add-new-account-btn')?.addEventListener('click', () => {
+                vscode.postMessage({ command: 'autoTrigger.addAccount' });
+            });
+        }
+
+        // 渲染账号列表
+        renderAccountManageList();
+        modal.classList.remove('hidden');
+    }
+
+    function closeAccountManageModal() {
+        const modal = document.getElementById('account-manage-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    function renderAccountManageList() {
+        const body = document.getElementById('account-manage-body');
+        if (!body) return;
+
+        const auth = authorizationStatus;
+        const accounts = auth?.accounts || [];
+        const activeAccount = auth?.activeAccount;
+
+        if (accounts.length === 0) {
+            body.innerHTML = `<div class="account-manage-empty">${i18n['autoTrigger.noAccounts'] || 'No accounts authorized'}</div>`;
+            return;
+        }
+
+        const listHtml = accounts.map(acc => {
+            const isActive = acc.email === activeAccount;
+            // Check if refresh token is invalid (marked by backend when refresh fails)
+            const isInvalid = acc.isInvalid === true;
+            const invalidClass = isInvalid ? ' expired' : '';
+            const icon = isInvalid ? '⚠️' : (isActive ? '✅' : '👤');
+            const invalidBadge = isInvalid ? `<span class="account-manage-badge expired">${i18n['autoTrigger.tokenExpired'] || 'Expired'}</span>` : '';
+            const activeBadge = isActive && !isInvalid ? `<span class="account-manage-badge">${i18n['autoTrigger.accountActive'] || 'Active'}</span>` : '';
+            
+            return `
+                <div class="account-manage-item ${isActive ? 'active' : ''}${invalidClass}" data-email="${acc.email}">
+                    <div class="account-manage-info">
+                        <span class="account-manage-icon">${icon}</span>
+                        <span class="account-manage-email">${acc.email}</span>
+                        ${activeBadge}${invalidBadge}
+                    </div>
+                    <div class="account-manage-actions">
+                        <button class="at-btn at-btn-small at-btn-secondary account-reauth-btn" data-email="${acc.email}">${i18n['autoTrigger.reauthorizeBtn'] || 'Reauthorize'}</button>
+                        <button class="at-btn at-btn-small at-btn-danger account-remove-btn" data-email="${acc.email}">${i18n['autoTrigger.revokeBtn'] || 'Revoke'}</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        body.innerHTML = `<div class="account-manage-list">${listHtml}</div>`;
+
+        // 绑定点击整行切换账号
+        body.querySelectorAll('.account-manage-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                // 如果点击的是按钮，则忽略（按钮已有阻止冒泡，但多一层判断更安全）
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+                
+                // 如果已激活，不执行操作
+                if (item.classList.contains('active')) return;
+
+                const email = item.dataset.email;
+                if (email) {
+                    vscode.postMessage({ command: 'autoTrigger.switchAccount', email });
+                    closeAccountManageModal();
+                }
+            });
+        });
+
+        // 绑定重新授权按钮
+        body.querySelectorAll('.account-reauth-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const email = btn.dataset.email;
+                vscode.postMessage({ command: 'autoTrigger.reauthorizeAccount', email });
+            });
+        });
+
+        // 绑定取消授权按钮
+        body.querySelectorAll('.account-remove-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const email = btn.dataset.email;
+                if (email && typeof window.openRevokeModalForEmail === 'function') {
+                    window.openRevokeModalForEmail(email);
+                }
+            });
+        });
     }
 
     function updateQuotaSourceInfo() {
@@ -1205,6 +1326,7 @@
 
     window.retryConnection = retryConnection;
     window.openLogs = openLogs;
+    window.openAccountManageModal = openAccountManageModal;
 
     // ============ 拖拽排序 ============
 
