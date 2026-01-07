@@ -814,6 +814,98 @@
 }
 
 /* ========================================
+   Multi-Account Authorization
+   ======================================== */
+
+.at-auth-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.at-auth-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--vscode-foreground);
+}
+
+.at-account-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.at-account-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.at-account-item:hover {
+    border-color: var(--vscode-button-background);
+}
+
+.at-account-item.active {
+    border-color: var(--vscode-charts-green);
+    background: rgba(76, 175, 80, 0.08);
+}
+
+.at-account-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.at-account-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.at-account-email {
+    font-size: 13px;
+    color: var(--vscode-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.at-account-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    background: rgba(76, 175, 80, 0.2);
+    color: var(--vscode-charts-green);
+    border-radius: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.at-account-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+
+/* Update auth row for multi-account layout */
+.at-auth-row {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.at-auth-row .at-auth-info {
+    gap: 10px;
+}
+
+/* ========================================
    Schedule Section
    ======================================== */
 

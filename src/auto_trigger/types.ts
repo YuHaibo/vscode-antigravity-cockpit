@@ -18,13 +18,26 @@ export interface OAuthCredential {
 }
 
 /**
- * 授权状态
+ * Account info for UI display (multi-account support)
+ */
+export interface AccountInfo {
+    email: string;
+    isActive: boolean;
+    expiresAt?: string;
+}
+
+/**
+ * 授权状态 (supports multiple accounts)
  */
 export interface AuthorizationStatus {
     isAuthorized: boolean;
     email?: string;
     expiresAt?: string;
     lastRefresh?: string;
+    /** All authorized accounts */
+    accounts?: AccountInfo[];
+    /** Currently active account email */
+    activeAccount?: string;
 }
 
 /**
@@ -43,28 +56,28 @@ export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;  // 0 = Sunday
 export interface ScheduleConfig {
     enabled: boolean;
     repeatMode: ScheduleRepeatMode;
-    
+
     // 每天模式
     dailyTimes?: string[];  // ["07:00", "12:00", "17:00"]
-    
+
     // 每周模式
     weeklyDays?: number[];  // [1, 2, 3, 4, 5] = 工作日 (0 = Sunday)
     weeklyTimes?: string[];
-    
+
     // 间隔模式
     intervalHours?: number;
     intervalStartTime?: string;  // "07:00"
     intervalEndTime?: string;    // "22:00" (可选，不填则全天)
-    
+
     // 高级: 原始 crontab 表达式
     crontab?: string;
-    
+
     /** 选中的模型列表 (用于触发) */
     selectedModels: string[];
-    
+
     /** 配额重置时自动唤醒 */
     wakeOnReset?: boolean;
-    
+
     /** 自定义唤醒词 (默认: "hi") */
     customPrompt?: string;
 }
@@ -111,13 +124,13 @@ export interface AutoTriggerState {
  * Webview 消息类型
  */
 export interface AutoTriggerMessage {
-    type: 
-        | 'auto_trigger_get_state'
-        | 'auto_trigger_start_auth'
-        | 'auto_trigger_revoke_auth'
-        | 'auto_trigger_save_schedule'
-        | 'auto_trigger_test_trigger'
-        | 'auto_trigger_state_update';
+    type:
+    | 'auto_trigger_get_state'
+    | 'auto_trigger_start_auth'
+    | 'auto_trigger_revoke_auth'
+    | 'auto_trigger_save_schedule'
+    | 'auto_trigger_test_trigger'
+    | 'auto_trigger_state_update';
     data?: {
         models?: string[];
         [key: string]: unknown;

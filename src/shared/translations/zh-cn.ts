@@ -109,7 +109,7 @@ export const zhCN = {
     'grouping.autoGroup': '自动分组',
     'grouping.autoGroupHint': '根据当前配额重新计算分组',
     'grouping.description': '此模式将共享配额的模型聚合展示，支持重命名、排序并同步至状态栏。您可以点击右侧"分组管理"自定义分组，或点击上方「配额分组」切换回全部模型视图。',
-    
+
     // Custom Grouping
     'customGrouping.title': '分组管理',
     'customGrouping.hint': '只有配额和重置时间相同的模型可归入同一分组。当配额变化导致不一致时，不符合的模型会被自动移出分组。',
@@ -370,6 +370,20 @@ export const zhCN = {
     'autoTrigger.modeQuotaReset': '配额重置自动唤醒',
     'autoTrigger.modeQuotaResetHint': '检测到配额恢复满额时自动唤醒一次',
     'autoTrigger.crontabLabel': 'Crontab 表达式',
+
+    // Multi-Account 多账号管理
+    'autoTrigger.accountList': '已授权账号',
+    'autoTrigger.addAccount': '添加账号',
+    'autoTrigger.removeAccount': '移除',
+    'autoTrigger.switchAccount': '切换',
+    'autoTrigger.accountActive': '当前使用',
+    'autoTrigger.noActiveAccount': '未选择活跃账号',
+    'autoTrigger.confirmRemove': '确定要移除此账号吗？',
+    'autoTrigger.confirmRemoveTitle': '移除账号',
+    'autoTrigger.accountAdded': '已添加账号: {email}',
+    'autoTrigger.accountRemoved': '已移除账号: {email}',
+    'autoTrigger.accountSwitched': '已切换至账号: {email}',
+    'autoTrigger.accountDuplicate': '账号 {email} 已存在',
 
     // Announcement
     'announcement.title': '消息通知',

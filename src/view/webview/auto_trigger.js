@@ -3,7 +3,7 @@
  * 自动触发功能的前端逻辑 - 紧凑布局版本
  */
 
-(function() {
+(function () {
     'use strict';
 
     // 获取 VS Code API
@@ -32,7 +32,7 @@
     ]);
     let selectedModels = [];  // 从 state.schedule.selectedModels 获取
     let testSelectedModels = [];
-    
+
     // 配置状态
     let configEnabled = false;
     let configTriggerMode = 'scheduled';
@@ -99,7 +99,7 @@
             configEnabled = e.target.checked;
             updateConfigAvailability();
         });
-        
+
         // 唤醒方式
         document.getElementById('at-trigger-mode-list')?.addEventListener('click', (e) => {
             const target = e.target.closest('.at-segment-btn');
@@ -185,7 +185,7 @@
                 }
             }
         });
-        
+
         // Crontab 输入监听
         document.getElementById('at-crontab-input')?.addEventListener('input', () => {
             if (configTriggerMode === 'crontab') {
@@ -224,10 +224,10 @@
     function openTestModal() {
         // 获取可用模型的 ID 列表
         const availableIds = availableModels.map(m => m.id);
-        
+
         // 从 selectedModels 中过滤，只保留在可用模型列表中的
         const validSelected = selectedModels.filter(id => availableIds.includes(id));
-        
+
         if (validSelected.length > 0) {
             testSelectedModels = [...validSelected];
         } else if (availableModels.length > 0) {
@@ -236,7 +236,7 @@
         } else {
             testSelectedModels = [];
         }
-        
+
         renderTestModels();
         document.getElementById('at-test-modal')?.classList.remove('hidden');
     }
@@ -271,7 +271,7 @@
 
     function loadConfigFromState() {
         if (!currentState?.schedule) return;
-        
+
         const s = currentState.schedule;
         configEnabled = s.enabled || false;
         configMode = s.repeatMode || 'daily';
@@ -287,7 +287,7 @@
         document.getElementById('at-mode-select').value = configMode;
         document.getElementById('at-interval-hours').value = configIntervalHours;
         document.getElementById('at-interval-start').value = configIntervalStart;
-        
+
         // 唤醒方式
         if (s.wakeOnReset) {
             configTriggerMode = 'quota_reset';
@@ -297,13 +297,13 @@
             configTriggerMode = 'scheduled';
         }
         updateTriggerModeSelection();
-        
+
         // 自定义唤醒词
         const customPromptInput = document.getElementById('at-custom-prompt');
         if (customPromptInput) {
             customPromptInput.value = s.customPrompt || '';
         }
-        
+
         // 恢复 Crontab
         const crontabInput = document.getElementById('at-crontab-input');
         if (crontabInput) {
@@ -325,7 +325,7 @@
             }
             return;
         }
-        
+
         const config = {
             enabled: configEnabled,
             repeatMode: configMode,
@@ -358,7 +358,7 @@
             .map(el => el.dataset.model)
             .filter(Boolean);
     }
-    
+
     function runTest() {
         if (isTestRunning) return;
 
@@ -366,16 +366,16 @@
         if (pickedModels.length > 0) {
             testSelectedModels = pickedModels;
         }
-        
+
         if (testSelectedModels.length === 0) {
             // 使用第一个可用模型作为默认
             const defaultModel = availableModels.length > 0 ? availableModels[0].id : 'gemini-3-flash';
             testSelectedModels = [defaultModel];
         }
-        
+
         // 获取自定义唤醒词
         const customPrompt = document.getElementById('at-test-custom-prompt')?.value.trim() || undefined;
-        
+
         // 设置加载状态
         isTestRunning = true;
         const runBtn = document.getElementById('at-test-run');
@@ -383,24 +383,24 @@
             runBtn.disabled = true;
             runBtn.innerHTML = `<span class="at-spinner"></span> ${t('autoTrigger.testing')}`;
         }
-        
+
         // 关闭弹窗
         closeTestModal();
-        
+
         // 显示状态提示
         showTestingStatus();
-        
+
         vscode.postMessage({
             command: 'autoTrigger.test',
             models: [...testSelectedModels],
             customPrompt: customPrompt,
         });
     }
-    
+
     function showTestingStatus() {
         const statusCard = document.getElementById('at-status-card');
         if (!statusCard) return;
-        
+
         // 添加测试中提示
         let testingBanner = document.getElementById('at-testing-banner');
         if (!testingBanner) {
@@ -412,13 +412,13 @@
         testingBanner.innerHTML = `<span class="at-spinner"></span> ${t('autoTrigger.testingPleaseWait')}`;
         testingBanner.classList.remove('hidden');
     }
-    
+
     function hideTestingStatus() {
         const testingBanner = document.getElementById('at-testing-banner');
         if (testingBanner) {
             testingBanner.classList.add('hidden');
         }
-        
+
         // 重置按钮状态
         isTestRunning = false;
         const runBtn = document.getElementById('at-test-run');
@@ -642,7 +642,7 @@
         if (!container) return;
 
         const triggers = currentState?.recentTriggers || [];
-        
+
         if (triggers.length === 0) {
             container.innerHTML = `<div class="at-no-data">${t('autoTrigger.noHistory')}</div>`;
             return;
@@ -653,7 +653,7 @@
             const timeStr = date.toLocaleString();
             const icon = trigger.success ? '✅' : '❌';
             const statusText = trigger.success ? t('autoTrigger.success') : t('autoTrigger.failed');
-            
+
             // 显示请求内容和响应
             let contentHtml = '';
             if (trigger.prompt) {
@@ -682,7 +682,7 @@
                 }
             }
             const typeBadge = `<span class="at-history-type-badge ${typeClass}">${typeLabel}</span>`;
-            
+
             return `
                 <div class="at-history-item">
                     <span class="at-history-icon">${icon}</span>
@@ -695,7 +695,7 @@
             `;
         }).join('');
     }
-    
+
     // HTML 转义函数
     function escapeHtml(text) {
         const div = document.createElement('div');
@@ -743,7 +743,7 @@
         };
 
         const nextRuns = calculateNextRuns(config, 5);
-        
+
         if (nextRuns.length === 0) {
             container.innerHTML = `<li>${t('autoTrigger.selectTimeHint')}</li>`;
             return;
@@ -754,17 +754,17 @@
             return `<li>${idx + 1}. ${formatDateTime(date)}</li>`;
         }).join('');
     }
-    
+
     // 解析 Crontab 并计算下次运行时间（简化版）
     function calculateCrontabNextRuns(crontab, count) {
         try {
             const parts = crontab.split(/\s+/);
             if (parts.length < 5) return [];
-            
+
             const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
             const results = [];
             const now = new Date();
-            
+
             // 简化解析：支持 * 和具体数值
             const parseField = (field, max) => {
                 if (field === '*') return Array.from({ length: max + 1 }, (_, i) => i);
@@ -779,10 +779,10 @@
                 }
                 return [Number(field)];
             };
-            
+
             const minutes = parseField(minute, 59);
             const hours = parseField(hour, 23);
-            
+
             // 遍历未来 7 天
             for (let dayOffset = 0; dayOffset < 7 && results.length < count; dayOffset++) {
                 for (const h of hours) {
@@ -798,7 +798,7 @@
                     if (results.length >= count) break;
                 }
             }
-            
+
             return results;
         } catch {
             return [];
@@ -871,8 +871,8 @@
         } else if (date.toDateString() === tomorrow.toDateString()) {
             return `${t('time.tomorrow')} ${timeStr}`;
         } else {
-            const dayKeys = ['time.sunday', 'time.monday', 'time.tuesday', 'time.wednesday', 
-                           'time.thursday', 'time.friday', 'time.saturday'];
+            const dayKeys = ['time.sunday', 'time.monday', 'time.tuesday', 'time.wednesday',
+                'time.thursday', 'time.friday', 'time.saturday'];
             return `${t(dayKeys[date.getDay()])} ${timeStr}`;
         }
     }
@@ -882,7 +882,7 @@
     function updateState(state) {
         currentState = state;
         availableModels = filterAvailableModels(state.availableModels || []);
-        
+
         if (state.schedule?.selectedModels) {
             selectedModels = state.schedule.selectedModels;
         }
@@ -895,7 +895,7 @@
 
         // 隐藏测试中状态（如果收到新状态说明测试完成了）
         hideTestingStatus();
-        
+
         updateAuthUI(state.authorization);
         updateStatusUI(state);
         updateHistoryCount(state.recentTriggers?.length || 0);
@@ -931,29 +931,69 @@
 
         if (!authRow) return;
 
-        if (auth?.isAuthorized) {
+        const accounts = auth?.accounts || [];
+        const hasAccounts = accounts.length > 0;
+        const activeAccount = auth?.activeAccount;
+
+        if (hasAccounts) {
+            // Multi-account view
+            const accountListHtml = accounts.map(acc => {
+                const isActive = acc.email === activeAccount;
+                return `
+                    <div class="at-account-item ${isActive ? 'active' : ''}" data-email="${acc.email}">
+                        <div class="at-account-info">
+                            <span class="at-account-icon">${isActive ? '✅' : '👤'}</span>
+                            <span class="at-account-email">${acc.email}</span>
+                            ${isActive ? `<span class="at-account-badge">${t('autoTrigger.accountActive')}</span>` : ''}
+                        </div>
+                        <div class="at-account-actions">
+                            ${!isActive ? `<button class="at-btn at-btn-small at-btn-secondary at-switch-account-btn" data-email="${acc.email}">${t('autoTrigger.switchAccount')}</button>` : ''}
+                            <button class="at-btn at-btn-small at-btn-danger at-remove-account-btn" data-email="${acc.email}">${t('autoTrigger.removeAccount')}</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
             authRow.innerHTML = `
-                <div class="at-auth-info">
-                    <span class="at-auth-icon">✅</span>
-                    <span class="at-auth-text">${t('autoTrigger.authorized')}</span>
-                    <span class="at-auth-email">${auth.email || ''}</span>
+                <div class="at-auth-header">
+                    <span class="at-auth-title">${t('autoTrigger.accountList')}</span>
+                    <button id="at-add-account-btn" class="at-btn at-btn-primary at-btn-small">➕ ${t('autoTrigger.addAccount')}</button>
                 </div>
-                <div class="at-auth-actions">
-                    <button id="at-reauth-btn" class="at-btn at-btn-secondary">${t('autoTrigger.reauthorizeBtn')}</button>
-                    <button id="at-revoke-btn" class="at-btn at-btn-danger">${t('autoTrigger.revokeBtn')}</button>
+                <div class="at-account-list">
+                    ${accountListHtml}
                 </div>
             `;
+
             statusGrid?.classList.remove('hidden');
             actions?.classList.remove('hidden');
 
-            // 重新绑定按钮事件
-            document.getElementById('at-reauth-btn')?.addEventListener('click', () => {
-                vscode.postMessage({ command: 'autoTrigger.authorize' });
+            // Bind add account button
+            document.getElementById('at-add-account-btn')?.addEventListener('click', () => {
+                vscode.postMessage({ command: 'autoTrigger.addAccount' });
             });
-            document.getElementById('at-revoke-btn')?.addEventListener('click', () => {
-                openRevokeModal();
+
+            // Bind switch account buttons
+            authRow.querySelectorAll('.at-switch-account-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const email = btn.dataset.email;
+                    vscode.postMessage({ command: 'autoTrigger.switchAccount', email });
+                });
             });
+
+            // Bind remove account buttons
+            authRow.querySelectorAll('.at-remove-account-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const email = btn.dataset.email;
+                    if (confirm(t('autoTrigger.confirmRemove'))) {
+                        vscode.postMessage({ command: 'autoTrigger.removeAccount', email });
+                    }
+                });
+            });
+
         } else {
+            // No accounts - show authorize button
             authRow.innerHTML = `
                 <div class="at-auth-info">
                     <span class="at-auth-icon">⚠️</span>
@@ -974,7 +1014,7 @@
 
     function updateStatusUI(state) {
         const schedule = state.schedule || {};
-        
+
         // 状态
         const statusValue = document.getElementById('at-status-value');
         if (statusValue) {
@@ -1011,8 +1051,8 @@
                 modeText = `${t('autoTrigger.daily')} ${times}${suffix}`;
             } else if (schedule.repeatMode === 'weekly' && schedule.weeklyDays?.length) {
                 // 显示选择的天和时间点（换行分开）
-                const dayNames = [t('time.sunday'), t('time.monday'), t('time.tuesday'), 
-                                  t('time.wednesday'), t('time.thursday'), t('time.friday'), t('time.saturday')];
+                const dayNames = [t('time.sunday'), t('time.monday'), t('time.tuesday'),
+                t('time.wednesday'), t('time.thursday'), t('time.friday'), t('time.saturday')];
                 const days = schedule.weeklyDays.map(d => dayNames[d] || d).join(', ');
                 const times = schedule.weeklyTimes?.slice(0, 5).join(', ') || '';
                 const timeSuffix = schedule.weeklyTimes?.length > 5 ? '...' : '';
@@ -1072,7 +1112,7 @@
 
     window.addEventListener('message', event => {
         const message = event.data;
-        
+
         switch (message.type) {
             case 'autoTriggerState':
                 updateState(message.data);

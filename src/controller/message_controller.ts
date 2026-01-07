@@ -30,14 +30,14 @@ export class MessageController {
         source: 'local' | 'authorized',
     ): Promise<void> {
         const previousSource = configService.getConfig().quotaSource;
-        
+
         if (source === 'authorized') {
             this.reactor.cancelInitRetry();
         }
-        
+
         logger.info(`User changed quota source to: ${source}`);
         await configService.updateConfig('quotaSource', source);
-        
+
         // 发送 loading 状态提示
         this.hud.sendMessage({
             type: 'quotaSourceLoading',
@@ -57,7 +57,7 @@ export class MessageController {
             }
             return;
         }
-        
+
         const cacheAge = this.reactor.getCacheAgeMs(source);
         const refreshIntervalMs = configService.getConfig().refreshInterval ?? TIMING.DEFAULT_REFRESH_INTERVAL_MS;
         const hasCache = this.reactor.publishCachedTelemetry(source);
@@ -77,7 +77,7 @@ export class MessageController {
                 });
             }
         });
-        
+
         this.hud.onSignal(async (message: WebviewMessage) => {
             switch (message.command) {
                 case 'togglePin':
@@ -397,15 +397,15 @@ export class MessageController {
                     if (customGroupMappings) {
                         logger.info(`User saved custom grouping: ${Object.keys(customGroupMappings).length} models`);
                         await configService.updateGroupMappings(customGroupMappings);
-                        
+
                         // 清除之前的 pinnedGroups（因为 groupId 可能已变化）
                         await configService.updateConfig('pinnedGroups', []);
-                        
+
                         // 保存分组名称（如果有）
                         if (customGroupNames) {
                             await configService.updateConfig('groupingCustomNames', customGroupNames);
                         }
-                        
+
                         // 刷新 UI
                         this.reactor.reprocess();
                     }
@@ -491,7 +491,7 @@ export class MessageController {
                         if (result.success) {
                             // 显示成功消息和 AI 回复
                             const successMsg = t('autoTrigger.triggerSuccess').replace('{duration}', String(result.duration));
-                            const responsePreview = result.response 
+                            const responsePreview = result.response
                                 ? `\n${result.response.substring(0, 200)}${result.response.length > 200 ? '...' : ''}`
                                 : '';
                             vscode.window.showInformationMessage(successMsg + responsePreview);
@@ -536,6 +536,60 @@ export class MessageController {
                             type: 'autoTriggerState',
                             data: state,
                         });
+                    }
+                    break;
+
+                case 'autoTrigger.addAccount':
+                    // Same as authorize - adds a new account
+                    logger.info('User adding new account');
+                    try {
+                        await autoTriggerController.authorize();
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                        if (configService.getConfig().quotaSource === 'authorized') {
+                            this.reactor.syncTelemetry();
+                        }
+                    } catch (error) {
+                        const err = error instanceof Error ? error : new Error(String(error));
+                        logger.error(`Add account failed: ${err.message}`);
+                        vscode.window.showErrorMessage(`Add account failed: ${err.message}`);
+                    }
+                    break;
+
+                case 'autoTrigger.removeAccount':
+                    if (message.email) {
+                        logger.info(`User removing account: ${message.email}`);
+                        await autoTriggerController.removeAccount(message.email);
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                        if (configService.getConfig().quotaSource === 'authorized') {
+                            this.reactor.syncTelemetry();
+                        }
+                    } else {
+                        logger.warn('removeAccount missing email');
+                    }
+                    break;
+
+                case 'autoTrigger.switchAccount':
+                    if (message.email) {
+                        logger.info(`User switching to account: ${message.email}`);
+                        await autoTriggerController.switchAccount(message.email);
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                        if (configService.getConfig().quotaSource === 'authorized') {
+                            this.reactor.syncTelemetry();
+                        }
+                    } else {
+                        logger.warn('switchAccount missing email');
                     }
                     break;
 

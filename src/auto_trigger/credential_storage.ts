@@ -2,18 +2,33 @@
  * Antigravity Cockpit - Credential Storage
  * OAuth 凭证的安全存储服务
  * 使用 VS Code 的 SecretStorage API 安全存储敏感信息
+ * 
+ * Supports multiple accounts with active account selection
  */
 
 import * as vscode from 'vscode';
-import { OAuthCredential, AuthorizationStatus } from './types';
+import { OAuthCredential, AuthorizationStatus, AccountInfo } from './types';
 import { logger } from '../shared/log_service';
 
-const CREDENTIAL_KEY = 'antigravity.autoTrigger.credential';
+// Legacy single-account key (for migration)
+const LEGACY_CREDENTIAL_KEY = 'antigravity.autoTrigger.credential';
+
+// Multi-account storage keys
+const CREDENTIALS_KEY = 'antigravity.autoTrigger.credentials';
+const ACTIVE_ACCOUNT_KEY = 'antigravity.autoTrigger.activeAccount';
 const STATE_KEY = 'antigravity.autoTrigger.state';
+
+/**
+ * Multi-account credentials storage format
+ */
+interface CredentialsStorage {
+    accounts: Record<string, OAuthCredential>;
+}
 
 /**
  * 凭证存储服务
  * 单例模式，通过 initialize() 初始化
+ * Supports multiple accounts
  */
 class CredentialStorage {
     private secretStorage?: vscode.SecretStorage;
@@ -29,6 +44,11 @@ class CredentialStorage {
         this.globalState = context.globalState;
         this.initialized = true;
         logger.info('[CredentialStorage] Initialized');
+
+        // Trigger migration check (async, non-blocking)
+        this.migrateFromLegacy().catch(err => {
+            logger.error(`[CredentialStorage] Migration failed: ${err.message}`);
+        });
     }
 
     /**
@@ -40,51 +60,254 @@ class CredentialStorage {
         }
     }
 
+    // ============ Multi-Account Methods ============
+
     /**
-     * 保存 OAuth 凭证
+     * Get all credentials storage
      */
-    async saveCredential(credential: OAuthCredential): Promise<void> {
+    private async getCredentialsStorage(): Promise<CredentialsStorage> {
         this.ensureInitialized();
         try {
-            const json = JSON.stringify(credential);
-            await this.secretStorage!.store(CREDENTIAL_KEY, json);
-            logger.info('[CredentialStorage] Credential saved successfully');
+            const json = await this.secretStorage!.get(CREDENTIALS_KEY);
+            if (!json) {
+                return { accounts: {} };
+            }
+            return JSON.parse(json) as CredentialsStorage;
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
-            logger.error(`[CredentialStorage] Failed to save credential: ${err.message}`);
+            logger.error(`[CredentialStorage] Failed to get credentials storage: ${err.message}`);
+            return { accounts: {} };
+        }
+    }
+
+    /**
+     * Save all credentials storage
+     */
+    private async saveCredentialsStorage(storage: CredentialsStorage): Promise<void> {
+        this.ensureInitialized();
+        try {
+            const json = JSON.stringify(storage);
+            await this.secretStorage!.store(CREDENTIALS_KEY, json);
+            logger.info('[CredentialStorage] Credentials storage saved');
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error(`[CredentialStorage] Failed to save credentials storage: ${err.message}`);
             throw err;
         }
     }
 
     /**
-     * 获取 OAuth 凭证
+     * Check if an account with given email already exists
      */
-    async getCredential(): Promise<OAuthCredential | null> {
-        this.ensureInitialized();
-        try {
-            const json = await this.secretStorage!.get(CREDENTIAL_KEY);
-            if (!json) {
-                return null;
+    async hasAccount(email: string): Promise<boolean> {
+        const storage = await this.getCredentialsStorage();
+        return email in storage.accounts;
+    }
+
+    /**
+     * Save credential for a specific account
+     * @returns 'added' if new account, 'duplicate' if already exists
+     */
+    async saveCredentialForAccount(email: string, credential: OAuthCredential): Promise<'added' | 'duplicate'> {
+        const storage = await this.getCredentialsStorage();
+
+        // Check for duplicate
+        if (email in storage.accounts) {
+            logger.warn(`[CredentialStorage] Account ${email} already exists, skipping`);
+            return 'duplicate';
+        }
+
+        // Add new account
+        storage.accounts[email] = credential;
+        await this.saveCredentialsStorage(storage);
+
+        // Set as active if it's the first account
+        const accountCount = Object.keys(storage.accounts).length;
+        if (accountCount === 1) {
+            await this.setActiveAccount(email);
+        }
+
+        logger.info(`[CredentialStorage] Account ${email} added successfully`);
+        return 'added';
+    }
+
+    /**
+     * Get credential for a specific account
+     */
+    async getCredentialForAccount(email: string): Promise<OAuthCredential | null> {
+        const storage = await this.getCredentialsStorage();
+        return storage.accounts[email] || null;
+    }
+
+    /**
+     * Get all credentials
+     */
+    async getAllCredentials(): Promise<Record<string, OAuthCredential>> {
+        const storage = await this.getCredentialsStorage();
+        return storage.accounts;
+    }
+
+    /**
+     * Delete credential for a specific account
+     */
+    async deleteCredentialForAccount(email: string): Promise<void> {
+        const storage = await this.getCredentialsStorage();
+
+        if (!(email in storage.accounts)) {
+            logger.warn(`[CredentialStorage] Account ${email} not found`);
+            return;
+        }
+
+        delete storage.accounts[email];
+        await this.saveCredentialsStorage(storage);
+
+        // If deleted account was active, set another as active
+        const activeAccount = await this.getActiveAccount();
+        if (activeAccount === email) {
+            const remainingEmails = Object.keys(storage.accounts);
+            if (remainingEmails.length > 0) {
+                await this.setActiveAccount(remainingEmails[0]);
+            } else {
+                await this.setActiveAccount(null);
             }
-            return JSON.parse(json) as OAuthCredential;
+        }
+
+        logger.info(`[CredentialStorage] Account ${email} deleted`);
+    }
+
+    /**
+     * Set the active account
+     */
+    async setActiveAccount(email: string | null): Promise<void> {
+        this.ensureInitialized();
+        await this.globalState!.update(ACTIVE_ACCOUNT_KEY, email);
+        logger.info(`[CredentialStorage] Active account set to: ${email || 'none'}`);
+    }
+
+    /**
+     * Get the active account email
+     */
+    async getActiveAccount(): Promise<string | null> {
+        this.ensureInitialized();
+        return this.globalState!.get<string | null>(ACTIVE_ACCOUNT_KEY, null);
+    }
+
+    /**
+     * Get all account info for UI display
+     */
+    async getAccountInfoList(): Promise<AccountInfo[]> {
+        const storage = await this.getCredentialsStorage();
+        const activeAccount = await this.getActiveAccount();
+
+        return Object.entries(storage.accounts).map(([email, credential]) => ({
+            email,
+            isActive: email === activeAccount,
+            expiresAt: credential.expiresAt,
+        }));
+    }
+
+    // ============ Legacy Compatibility Methods ============
+
+    /**
+     * Migrate from legacy single-account format to multi-account
+     */
+    private async migrateFromLegacy(): Promise<void> {
+        this.ensureInitialized();
+
+        try {
+            // Check if legacy credential exists
+            const legacyJson = await this.secretStorage!.get(LEGACY_CREDENTIAL_KEY);
+            if (!legacyJson) {
+                return; // No legacy data
+            }
+
+            // Check if already migrated
+            const storage = await this.getCredentialsStorage();
+            if (Object.keys(storage.accounts).length > 0) {
+                // Already have multi-account data, delete legacy
+                await this.secretStorage!.delete(LEGACY_CREDENTIAL_KEY);
+                logger.info('[CredentialStorage] Legacy credential cleaned up (already migrated)');
+                return;
+            }
+
+            // Parse legacy credential
+            const legacyCredential = JSON.parse(legacyJson) as OAuthCredential;
+            if (!legacyCredential.email || !legacyCredential.refreshToken) {
+                // Invalid legacy data, just delete it
+                await this.secretStorage!.delete(LEGACY_CREDENTIAL_KEY);
+                logger.info('[CredentialStorage] Invalid legacy credential deleted');
+                return;
+            }
+
+            // Migrate to multi-account format
+            storage.accounts[legacyCredential.email] = legacyCredential;
+            await this.saveCredentialsStorage(storage);
+            await this.setActiveAccount(legacyCredential.email);
+
+            // Delete legacy key
+            await this.secretStorage!.delete(LEGACY_CREDENTIAL_KEY);
+
+            logger.info(`[CredentialStorage] Migrated legacy account: ${legacyCredential.email}`);
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
-            logger.error(`[CredentialStorage] Failed to get credential: ${err.message}`);
-            return null;
+            logger.error(`[CredentialStorage] Migration error: ${err.message}`);
         }
     }
 
     /**
-     * 删除 OAuth 凭证
+     * 保存 OAuth 凭证 (Legacy - saves to active account or first account)
+     * @deprecated Use saveCredentialForAccount instead
+     */
+    async saveCredential(credential: OAuthCredential): Promise<void> {
+        if (!credential.email) {
+            throw new Error('Credential must have an email');
+        }
+
+        const storage = await this.getCredentialsStorage();
+        storage.accounts[credential.email] = credential;
+        await this.saveCredentialsStorage(storage);
+
+        // Set as active if no active account
+        const activeAccount = await this.getActiveAccount();
+        if (!activeAccount) {
+            await this.setActiveAccount(credential.email);
+        }
+
+        logger.info(`[CredentialStorage] Credential saved for ${credential.email}`);
+    }
+
+    /**
+     * 获取 OAuth 凭证 (Returns active account's credential)
+     */
+    async getCredential(): Promise<OAuthCredential | null> {
+        const activeAccount = await this.getActiveAccount();
+        if (!activeAccount) {
+            // Check if there are any accounts
+            const storage = await this.getCredentialsStorage();
+            const emails = Object.keys(storage.accounts);
+            if (emails.length > 0) {
+                // Auto-set first account as active
+                await this.setActiveAccount(emails[0]);
+                return storage.accounts[emails[0]];
+            }
+            return null;
+        }
+
+        return await this.getCredentialForAccount(activeAccount);
+    }
+
+    /**
+     * 删除 OAuth 凭证 (Deletes all accounts)
      */
     async deleteCredential(): Promise<void> {
         this.ensureInitialized();
         try {
-            await this.secretStorage!.delete(CREDENTIAL_KEY);
-            logger.info('[CredentialStorage] Credential deleted');
+            await this.secretStorage!.delete(CREDENTIALS_KEY);
+            await this.setActiveAccount(null);
+            logger.info('[CredentialStorage] All credentials deleted');
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
-            logger.error(`[CredentialStorage] Failed to delete credential: ${err.message}`);
+            logger.error(`[CredentialStorage] Failed to delete credentials: ${err.message}`);
             throw err;
         }
     }
@@ -107,14 +330,18 @@ class CredentialStorage {
     }
 
     /**
-     * 获取授权状态
+     * 获取授权状态 (includes all accounts)
      */
     async getAuthorizationStatus(): Promise<AuthorizationStatus> {
         const credential = await this.getCredential();
-        
+        const accounts = await this.getAccountInfoList();
+        const activeAccount = await this.getActiveAccount();
+
         if (!credential || !credential.refreshToken) {
             return {
                 isAuthorized: false,
+                accounts,
+                activeAccount: activeAccount || undefined,
             };
         }
 
@@ -122,6 +349,8 @@ class CredentialStorage {
             isAuthorized: true,
             email: credential.email,
             expiresAt: credential.expiresAt,
+            accounts,
+            activeAccount: activeAccount || undefined,
         };
     }
 
@@ -129,15 +358,24 @@ class CredentialStorage {
      * 更新 access_token（刷新后调用）
      */
     async updateAccessToken(accessToken: string, expiresAt: string): Promise<void> {
-        const credential = await this.getCredential();
+        const activeAccount = await this.getActiveAccount();
+        if (!activeAccount) {
+            throw new Error('No active account to update');
+        }
+
+        const credential = await this.getCredentialForAccount(activeAccount);
         if (!credential) {
             throw new Error('No credential to update');
         }
 
         credential.accessToken = accessToken;
         credential.expiresAt = expiresAt;
-        await this.saveCredential(credential);
-        logger.info('[CredentialStorage] Access token updated');
+
+        const storage = await this.getCredentialsStorage();
+        storage.accounts[activeAccount] = credential;
+        await this.saveCredentialsStorage(storage);
+
+        logger.info(`[CredentialStorage] Access token updated for ${activeAccount}`);
     }
 
     /**

@@ -52,13 +52,13 @@ class OAuthService {
             // 1. 找到可用端口并启动回调服务器
             const port = await this.startCallbackServer();
             const redirectUri = `http://${CALLBACK_HOST}:${port}`;
-            
+
             // 2. 生成状态码（防 CSRF）
             const state = this.generateState();
-            
+
             // 3. 构建授权 URL
             const authUrl = this.buildAuthUrl(redirectUri, state);
-            
+
             // 4. 打开浏览器
             const opened = await vscode.env.openExternal(vscode.Uri.parse(authUrl));
             if (!opened) {
@@ -83,27 +83,37 @@ class OAuthService {
 
             // 6. 等待回调（最多等待 5 分钟）
             const code = await this.waitForCallback(state, 5 * 60 * 1000);
-            
+
             // 7. 用 code 换取 token
             const credential = await this.exchangeCodeForToken(code, redirectUri);
-            
+
             // 8. 获取用户信息
             const email = await this.fetchUserEmail(credential.accessToken);
             credential.email = email;
-            
-            // 9. 保存凭证
-            await credentialStorage.saveCredential(credential);
-            
-            // 10. 显示成功提示
-            vscode.window.showInformationMessage(`✅ 授权成功！已关联账号: ${email}`);
-            
+
+            // 9. Check for duplicate account
+            const isDuplicate = await credentialStorage.hasAccount(email);
+            if (isDuplicate) {
+                logger.warn(`[OAuthService] Account ${email} already exists`);
+                vscode.window.showWarningMessage(`⚠️ Account ${email} already exists / 账号已存在，无需重复添加`);
+                return true; // Still return true as auth itself succeeded
+            }
+
+            // 10. 保存凭证 (new account)
+            const result = await credentialStorage.saveCredentialForAccount(email, credential);
+
+            // 11. 显示成功提示
+            if (result === 'added') {
+                vscode.window.showInformationMessage(`✅ Authorization successful! Account added / 授权成功！已添加账号: ${email}`);
+            }
+
             logger.info(`[OAuthService] Authorization successful: ${email}`);
             return true;
 
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             logger.error(`[OAuthService] Authorization failed: ${err.message}`);
-            vscode.window.showErrorMessage(`❌ 授权失败: ${err.message}`);
+            vscode.window.showErrorMessage(`❌ Authorization failed / 授权失败: ${err.message}`);
             return false;
 
         } finally {
@@ -112,12 +122,22 @@ class OAuthService {
     }
 
     /**
-     * 撤销授权
+     * 撤销授权 (removes all accounts)
      */
     async revokeAuthorization(): Promise<void> {
         await credentialStorage.deleteCredential();
-        logger.info('[OAuthService] Authorization revoked');
-        vscode.window.showInformationMessage('✅ 已取消授权');
+        logger.info('[OAuthService] All authorizations revoked');
+        vscode.window.showInformationMessage('✅ All authorizations revoked / 已取消所有授权');
+    }
+
+    /**
+     * 撤销指定账号的授权
+     * @param email 要撤销的账号邮箱
+     */
+    async revokeAccount(email: string): Promise<void> {
+        await credentialStorage.deleteCredentialForAccount(email);
+        logger.info(`[OAuthService] Account ${email} revoked`);
+        vscode.window.showInformationMessage(`✅ Account removed / 已移除账号: ${email}`);
     }
 
     /**

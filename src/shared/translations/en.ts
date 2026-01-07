@@ -54,7 +54,7 @@ export const en = {
     'help.startAntigravity': 'Start Antigravity',
     'help.retry': 'Retry Connection',
     'help.openLogs': 'Open Logs',
-    
+
     // User Profile
     'profile.plan': 'Plan',
     'profile.tier': 'Tier',
@@ -109,7 +109,7 @@ export const en = {
     'grouping.autoGroup': 'Auto Group',
     'grouping.autoGroupHint': 'Recalculate groups based on current quota',
     'grouping.description': 'This mode aggregates models sharing the same quota. Supports renaming, sorting, and status bar sync. Click "Manage Groups" to customize, or toggle "Quota Groups" above to switch back.',
-    
+
     // Custom Grouping
     'customGrouping.title': 'Manage Groups',
     'customGrouping.hint': 'Only models with same quota and reset time can be grouped. Models will be auto-removed from group when quota changes cause inconsistency.',
@@ -370,6 +370,20 @@ export const en = {
     'autoTrigger.customPrompt': 'Custom Wake Word',
     'autoTrigger.customPromptPlaceholder': 'Default: hi',
     'autoTrigger.customPromptHint': 'Message sent to AI for wake-up, leave empty to use default "hi".',
+
+    // Multi-Account
+    'autoTrigger.accountList': 'Authorized Accounts',
+    'autoTrigger.addAccount': 'Add Account',
+    'autoTrigger.removeAccount': 'Remove',
+    'autoTrigger.switchAccount': 'Switch',
+    'autoTrigger.accountActive': 'Active',
+    'autoTrigger.noActiveAccount': 'No active account selected',
+    'autoTrigger.confirmRemove': 'Are you sure you want to remove this account?',
+    'autoTrigger.confirmRemoveTitle': 'Remove Account',
+    'autoTrigger.accountAdded': 'Account added: {email}',
+    'autoTrigger.accountRemoved': 'Account removed: {email}',
+    'autoTrigger.accountSwitched': 'Switched to account: {email}',
+    'autoTrigger.accountDuplicate': 'Account {email} already exists',
 
     // Announcement
     'announcement.title': 'Notifications',

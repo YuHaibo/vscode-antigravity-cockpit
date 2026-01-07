@@ -142,7 +142,7 @@ export interface PlanInfo {
     planName: string;
     monthlyPromptCredits: number;
     monthlyFlowCredits: number;
-    
+
     // 功能开关
     browserEnabled?: boolean;
     knowledgeBaseEnabled?: boolean;
@@ -156,7 +156,7 @@ export interface PlanInfo {
     canCustomizeAppIcon?: boolean;
     cascadeCanAutoRunCommands?: boolean;
     canAllowCascadeInBackground?: boolean;
-    
+
     // 限制配置
     maxNumChatInputTokens?: string | number;
     maxNumPremiumChatMessages?: string | number;
@@ -164,10 +164,10 @@ export interface PlanInfo {
     maxNumPinnedContextItems?: string | number;
     maxLocalIndexSize?: string | number;
     monthlyFlexCreditPurchaseAmount?: number;
-    
+
     // 团队配置
     defaultTeamConfig?: DefaultTeamConfig;
-    
+
     /** 扩展字段 - 支持 API 返回的其他属性 */
     [key: string]: string | number | boolean | object | undefined;
 }
@@ -304,7 +304,7 @@ export interface UserInfo {
 // ============ UI 相关类型 ============
 
 /** Webview 消息类型 */
-export type WebviewMessageType = 
+export type WebviewMessageType =
     | 'init'
     | 'refresh'
     | 'togglePin'
@@ -338,6 +338,9 @@ export type WebviewMessageType =
     | 'tabChanged'
     | 'autoTrigger.authorize'
     | 'autoTrigger.revoke'
+    | 'autoTrigger.addAccount'
+    | 'autoTrigger.removeAccount'
+    | 'autoTrigger.switchAccount'
     | 'autoTrigger.saveSchedule'
     | 'autoTrigger.test'
     | 'autoTrigger.validateCrontab'
@@ -399,6 +402,8 @@ export interface WebviewMessage {
     crontab?: string;
     /** 手动测试模型列表 (autoTrigger.test) */
     models?: string[];
+    /** 账号邮箱 (autoTrigger.removeAccount, autoTrigger.switchAccount) */
+    email?: string;
     // Announcements
     /** 公告 ID (announcement.markAsRead) */
     id?: string;
