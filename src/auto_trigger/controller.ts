@@ -9,11 +9,11 @@ import { credentialStorage } from './credential_storage';
 import { oauthService } from './oauth_service';
 import { schedulerService, CronParser } from './scheduler_service';
 import { triggerService } from './trigger_service';
-import { 
-    AutoTriggerState, 
-    ScheduleConfig, 
+import {
+    AutoTriggerState,
+    ScheduleConfig,
     AutoTriggerMessage,
-    SCHEDULE_PRESETS 
+    SCHEDULE_PRESETS
 } from './types';
 import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';
@@ -93,7 +93,7 @@ class AutoTriggerController {
         const nextRunTime = schedulerService.getNextRunTime();
         // 传入配额模型常量进行过滤
         const availableModels = await triggerService.fetchAvailableModels(this.quotaModelConstants);
-        
+
         // 更新 ID 到常量的映射
         this.modelIdToConstant.clear();
         for (const model of availableModels) {
@@ -143,6 +143,41 @@ class AutoTriggerController {
         schedule.enabled = false;
         await credentialStorage.saveState(SCHEDULE_CONFIG_KEY, schedule);
         this.updateStatusBar();
+    }
+
+    /**
+     * 移除指定账号
+     * @param email 要移除的账号邮箱
+     */
+    async removeAccount(email: string): Promise<void> {
+        await oauthService.revokeAccount(email);
+
+        // Check if there are remaining accounts
+        const hasAuth = await credentialStorage.hasValidCredential();
+        if (!hasAuth) {
+            // No accounts left, stop scheduler and disable schedule
+            schedulerService.stop();
+            const schedule = credentialStorage.getState<ScheduleConfig>(SCHEDULE_CONFIG_KEY, {
+                enabled: false,
+                repeatMode: 'daily',
+                selectedModels: ['gemini-3-flash'],
+            });
+            schedule.enabled = false;
+            await credentialStorage.saveState(SCHEDULE_CONFIG_KEY, schedule);
+        }
+
+        this.updateStatusBar();
+        this.notifyStateUpdate();
+    }
+
+    /**
+     * 切换活跃账号
+     * @param email 要切换到的账号邮箱
+     */
+    async switchAccount(email: string): Promise<void> {
+        await credentialStorage.setActiveAccount(email);
+        logger.info(`[AutoTriggerController] Switched to account: ${email}`);
+        this.notifyStateUpdate();
     }
 
     /**
@@ -197,7 +232,7 @@ class AutoTriggerController {
         }
 
         vscode.window.showInformationMessage('⏳ 正在发送触发请求...');
-        
+
         // 如果传入了自定义模型列表，使用自定义的；否则使用配置中的
         let selectedModels = models;
         if (!selectedModels || selectedModels.length === 0) {
@@ -280,7 +315,7 @@ class AutoTriggerController {
             schedule.customPrompt,
             triggerSource,
         );
-        
+
         if (result.success) {
             logger.info('[AutoTriggerController] Scheduled trigger executed successfully');
         } else {
@@ -290,7 +325,7 @@ class AutoTriggerController {
         // 通知 UI 更新
         this.notifyStateUpdate();
     }
-    
+
     /**
      * 检查配额重置并自动触发唤醒
      * 由 ReactorCore 在配额刷新后调用
@@ -298,51 +333,51 @@ class AutoTriggerController {
      */
     async checkAndTriggerOnQuotaReset(models: Array<{ id: string; resetAt?: string; remaining: number; limit: number }>): Promise<void> {
         logger.debug(`[AutoTriggerController] checkAndTriggerOnQuotaReset called, models count: ${models.length}`);
-        
+
         // 获取调度配置
         const schedule = credentialStorage.getState<ScheduleConfig>(SCHEDULE_CONFIG_KEY, {
             enabled: false,
             repeatMode: 'daily',
             selectedModels: ['gemini-3-flash'],
         });
-        
+
         logger.debug(`[AutoTriggerController] Schedule config: enabled=${schedule.enabled}, wakeOnReset=${schedule.wakeOnReset}, selectedModels=${JSON.stringify(schedule.selectedModels)}`);
-        
+
         if (!schedule.enabled) {
             logger.debug('[AutoTriggerController] Wake-up disabled, skipping');
             return;
         }
-        
+
         // 检查是否启用了"配额重置时自动唤醒"
         if (!schedule.wakeOnReset) {
             logger.debug('[AutoTriggerController] Wake on reset is disabled, skipping');
             return;
         }
-        
+
         // 检查是否已授权
         const hasAuth = await credentialStorage.hasValidCredential();
         if (!hasAuth) {
             logger.debug('[AutoTriggerController] Wake on reset: Not authorized, skipping');
             return;
         }
-        
+
         // 检查每个选中的模型是否需要触发
         const selectedModels = schedule.selectedModels || [];
         const modelsToTrigger: string[] = [];
-        
+
         logger.debug(`[AutoTriggerController] Checking ${selectedModels.length} selected models`);
         logger.debug(`[AutoTriggerController] Available model constants in quota: ${models.map(m => m.id).join(', ')}`);
         logger.debug(`[AutoTriggerController] modelIdToConstant map size: ${this.modelIdToConstant.size}`);
-        
+
         for (const modelId of selectedModels) {
             // 将用户选择的 ID 转换为 modelConstant
             const modelConstant = this.modelIdToConstant.get(modelId);
             logger.debug(`[AutoTriggerController] Model ${modelId} -> constant: ${modelConstant || 'NOT FOUND'}`);
-            
+
             if (!modelConstant) {
                 logger.debug(`[AutoTriggerController] Model ${modelId} has no constant mapping, trying direct match`);
             }
-            
+
             // 先用 modelConstant 查找，找不到再用原始 ID
             const modelQuota = models.find(m => m.id === modelConstant) || models.find(m => m.id === modelId);
             if (!modelQuota) {
@@ -353,9 +388,9 @@ class AutoTriggerController {
                 logger.debug(`[AutoTriggerController] Model ${modelId} has no resetAt`);
                 continue;
             }
-            
+
             logger.debug(`[AutoTriggerController] Model ${modelId}: remaining=${modelQuota.remaining}, limit=${modelQuota.limit}, resetAt=${modelQuota.resetAt}`);
-            
+
             // 检查是否应该触发 - 使用 modelConstant 作为 key 来避免重复触发
             const triggerKey = modelConstant || modelId;
             if (triggerService.shouldTriggerOnReset(triggerKey, modelQuota.resetAt, modelQuota.remaining, modelQuota.limit)) {
@@ -367,22 +402,22 @@ class AutoTriggerController {
                 logger.debug(`[AutoTriggerController] Model ${modelId} should NOT trigger`);
             }
         }
-        
+
         if (modelsToTrigger.length === 0) {
             logger.debug('[AutoTriggerController] No models to trigger');
             return;
         }
-        
+
         // 触发唤醒
         logger.info(`[AutoTriggerController] Wake on reset: Triggering for models: ${modelsToTrigger.join(', ')}`);
         const result = await triggerService.trigger(modelsToTrigger, 'auto', schedule.customPrompt, 'quota_reset');
-        
+
         if (result.success) {
             logger.info('[AutoTriggerController] Wake on reset: Trigger successful');
         } else {
             logger.error(`[AutoTriggerController] Wake on reset: Trigger failed: ${result.message}`);
         }
-        
+
         // 通知 UI 更新
         this.notifyStateUpdate();
     }
@@ -508,7 +543,7 @@ class AutoTriggerController {
     private async notifyStateUpdate(): Promise<void> {
         // 更新状态栏
         this.updateStatusBar();
-        
+
         if (this.messageHandler) {
             const state = await this.getState();
             this.messageHandler({
