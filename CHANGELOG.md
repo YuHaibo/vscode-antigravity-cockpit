@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.7.22]
+
+### Added
+- **Authorized Quota**: Model capability fields (`supportsImages`, `isRecommended`, `tagTitle`, `supportedMimeTypes`) now available in authorized mode, consistent with local mode.
+
+### Improved
+- **Webview Management**: Implemented WebviewPanelSerializer to properly restore webview panel after extension reload, preventing orphan panels and ensuring the latest code is always used.
+
 ## [1.7.21]
 
 ### Fixed

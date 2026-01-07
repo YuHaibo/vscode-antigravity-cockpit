@@ -8,6 +8,14 @@
 
 ---
 
+## [1.7.22]
+
+### 新增
+- **授权配额**：授权模式下现在支持模型能力字段（`supportsImages`、`isRecommended`、`tagTitle`、`supportedMimeTypes`），与本地模式一致。
+
+### 优化
+- **Webview 管理**：实现 WebviewPanelSerializer，插件重载后能正确恢复 webview 面板引用，避免"孤儿"面板并确保始终使用最新代码。
+
 ## [1.7.21]
 
 ### 修复

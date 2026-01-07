@@ -10,6 +10,7 @@ import { QuotaSnapshot, DashboardConfig, WebviewMessage } from '../shared/types'
 import { logger } from '../shared/log_service';
 import { configService } from '../shared/config_service';
 import { i18n, t, localeDisplayNames } from '../shared/i18n';
+import { credentialStorage } from '../auto_trigger';
 
 /**
  * CockpitHUD 类
@@ -18,7 +19,7 @@ import { i18n, t, localeDisplayNames } from '../shared/i18n';
 export class CockpitHUD {
     public static readonly viewType = 'antigravity.cockpit';
     
-    private panels: Map<string, vscode.WebviewPanel> = new Map();
+    private panel: vscode.WebviewPanel | undefined;
     private cachedTelemetry?: QuotaSnapshot;
     private messageRouter?: (message: WebviewMessage) => void;
     private readonly extensionUri: vscode.Uri;
@@ -30,25 +31,73 @@ export class CockpitHUD {
     }
 
     /**
+     * 注册 Webview Panel Serializer
+     * 用于在插件重载后恢复 panel 引用
+     */
+    public registerSerializer(): vscode.Disposable {
+        return vscode.window.registerWebviewPanelSerializer(CockpitHUD.viewType, {
+            deserializeWebviewPanel: async (webviewPanel: vscode.WebviewPanel, _state: unknown) => {
+                logger.info('[CockpitHUD] Restoring webview panel after reload');
+                
+                // 如果已经有一个 panel，关闭旧的
+                if (this.panel) {
+                    logger.info('[CockpitHUD] Disposing old panel before restoration');
+                    this.panel.dispose();
+                }
+                
+                // 恢复引用
+                this.panel = webviewPanel;
+                
+                // 重新设置 webview 内容和事件监听
+                webviewPanel.webview.options = {
+                    enableScripts: true,
+                    localResourceRoots: [this.extensionUri],
+                };
+                
+                webviewPanel.webview.html = this.generateHtml(webviewPanel.webview);
+                
+                webviewPanel.onDidDispose(() => {
+                    this.panel = undefined;
+                });
+                
+                webviewPanel.webview.onDidReceiveMessage((message: WebviewMessage) => {
+                    if (this.messageRouter) {
+                        this.messageRouter(message);
+                    }
+                });
+                
+                // 恢复后刷新数据
+                if (this.cachedTelemetry) {
+                    await this.refreshWithCachedData();
+                }
+            },
+        });
+    }
+
+    /**
      * 显示 HUD 面板
      * @param initialTab 可选的初始标签页 (如 'auto-trigger')
      * @returns 是否成功打开
      */
     public async revealHud(initialTab?: string): Promise<boolean> {
         const column = vscode.window.activeTextEditor?.viewColumn;
-        const existingPanel = this.panels.get('main');
 
-        if (existingPanel) {
-            existingPanel.reveal(column);
-            this.refreshWithCachedData();
+        // 如果已经有 panel，直接显示
+        if (this.panel) {
+            this.panel.reveal(column);
+            await this.refreshWithCachedData();
             // 如果指定了初始标签页，发送消息切换
             if (initialTab) {
                 setTimeout(() => {
-                    existingPanel.webview.postMessage({ type: 'switchTab', tab: initialTab });
+                    this.panel?.webview.postMessage({ type: 'switchTab', tab: initialTab });
                 }, 100);
             }
             return true;
         }
+
+        // 在创建新 panel 之前，先关闭所有旧版本的同类型 webview tabs
+        // 这解决了插件升级后出现多个 panel 的问题（旧版本没有 serializer）
+        await this.closeOrphanTabs();
 
         try {
             const panel = vscode.window.createWebviewPanel(
@@ -62,10 +111,10 @@ export class CockpitHUD {
                 },
             );
 
-            this.panels.set('main', panel);
+            this.panel = panel;
 
             panel.onDidDispose(() => {
-                this.panels.delete('main');
+                this.panel = undefined;
             });
 
             panel.webview.onDidReceiveMessage((message: WebviewMessage) => {
@@ -77,7 +126,7 @@ export class CockpitHUD {
             panel.webview.html = this.generateHtml(panel.webview);
 
             if (this.cachedTelemetry) {
-                this.refreshWithCachedData();
+                await this.refreshWithCachedData();
             }
 
             // 如果指定了初始标签页，延迟发送消息切换
@@ -96,42 +145,79 @@ export class CockpitHUD {
     }
 
     /**
+     * 关闭所有孤儿 webview tabs（旧版本遗留的 panel）
+     * 使用 tabGroups API 遍历所有打开的 tabs
+     */
+    private async closeOrphanTabs(): Promise<void> {
+        try {
+            const tabsToClose: vscode.Tab[] = [];
+            
+            for (const tabGroup of vscode.window.tabGroups.all) {
+                for (const tab of tabGroup.tabs) {
+                    // 检查是否是 webview tab
+                    if (tab.input instanceof vscode.TabInputWebview) {
+                        const tabViewType = tab.input.viewType;
+                        // viewType 可能带有 extension id 前缀，使用 includes 匹配
+                        if (tabViewType === CockpitHUD.viewType || 
+                            tabViewType.includes(CockpitHUD.viewType) ||
+                            tabViewType.endsWith(CockpitHUD.viewType)) {
+                            tabsToClose.push(tab);
+                        }
+                    }
+                }
+            }
+
+            if (tabsToClose.length > 0) {
+                logger.info(`[CockpitHUD] Closing ${tabsToClose.length} orphan webview tab(s)`);
+                await vscode.window.tabGroups.close(tabsToClose);
+            }
+        } catch (error) {
+            // tabGroups API 可能在某些环境不可用，静默忽略
+        }
+    }
+
+    /**
      * 使用缓存数据刷新视图
      */
-    private refreshWithCachedData(): void {
-        if (this.cachedTelemetry) {
-            const config = configService.getConfig();
-            this.refreshView(this.cachedTelemetry, {
-                showPromptCredits: config.showPromptCredits,
-                pinnedModels: config.pinnedModels,
-                modelOrder: config.modelOrder,
-                modelCustomNames: config.modelCustomNames,
-                visibleModels: config.visibleModels,
-                groupingEnabled: config.groupingEnabled,
-                groupCustomNames: config.groupingCustomNames,
-                groupingShowInStatusBar: config.groupingShowInStatusBar,
-                pinnedGroups: config.pinnedGroups,
-                groupOrder: config.groupOrder,
-                refreshInterval: config.refreshInterval,
-                notificationEnabled: config.notificationEnabled,
-                warningThreshold: config.warningThreshold,
-                criticalThreshold: config.criticalThreshold,
-                statusBarFormat: config.statusBarFormat,
-                profileHidden: config.profileHidden,
-                quotaSource: config.quotaSource,
-                authorizedAvailable: false,
-                displayMode: config.displayMode,
-                dataMasked: config.dataMasked,
-                groupMappings: config.groupMappings,
-            });
+    private async refreshWithCachedData(): Promise<void> {
+        if (!this.cachedTelemetry) {
+            return;
         }
+        const config = configService.getConfig();
+        const authorizationStatus = await credentialStorage.getAuthorizationStatus();
+        const authorizedAvailable = authorizationStatus.isAuthorized;
+
+        this.refreshView(this.cachedTelemetry, {
+            showPromptCredits: config.showPromptCredits,
+            pinnedModels: config.pinnedModels,
+            modelOrder: config.modelOrder,
+            modelCustomNames: config.modelCustomNames,
+            visibleModels: config.visibleModels,
+            groupingEnabled: config.groupingEnabled,
+            groupCustomNames: config.groupingCustomNames,
+            groupingShowInStatusBar: config.groupingShowInStatusBar,
+            pinnedGroups: config.pinnedGroups,
+            groupOrder: config.groupOrder,
+            refreshInterval: config.refreshInterval,
+            notificationEnabled: config.notificationEnabled,
+            warningThreshold: config.warningThreshold,
+            criticalThreshold: config.criticalThreshold,
+            statusBarFormat: config.statusBarFormat,
+            profileHidden: config.profileHidden,
+            quotaSource: config.quotaSource,
+            authorizedAvailable,
+            authorizationStatus,
+            displayMode: config.displayMode,
+            dataMasked: config.dataMasked,
+            groupMappings: config.groupMappings,
+        });
     }
 
     /**
      * 从缓存恢复数据
      */
-    public rehydrate(): void {
-        this.refreshWithCachedData();
+    public async rehydrate(): Promise<void> {
+        await this.refreshWithCachedData();
     }
 
     /**
@@ -145,9 +231,8 @@ export class CockpitHUD {
      * 向 Webview 发送消息
      */
     public sendMessage(message: object): void {
-        const panel = this.panels.get('main');
-        if (panel) {
-            panel.webview.postMessage(message);
+        if (this.panel) {
+            this.panel.webview.postMessage(message);
         }
     }
 
@@ -156,13 +241,12 @@ export class CockpitHUD {
      */
     public refreshView(snapshot: QuotaSnapshot, config: DashboardConfig): void {
         this.cachedTelemetry = snapshot;
-        const panel = this.panels.get('main');
         
-        if (panel) {
+        if (this.panel) {
             // 转换数据为 Webview 兼容格式
             const webviewData = this.convertToWebviewFormat(snapshot);
 
-            panel.webview.postMessage({
+            this.panel.webview.postMessage({
                 type: 'telemetry_update',
                 data: webviewData,
                 config,
@@ -268,11 +352,13 @@ export class CockpitHUD {
     }
 
     /**
-     * 销毁所有面板
+     * 销毁面板
      */
     public dispose(): void {
-        this.panels.forEach(panel => panel.dispose());
-        this.panels.clear();
+        if (this.panel) {
+            this.panel.dispose();
+            this.panel = undefined;
+        }
     }
 
     /**

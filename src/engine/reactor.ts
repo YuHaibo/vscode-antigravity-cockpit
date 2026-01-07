@@ -75,6 +75,18 @@ interface AuthorizedModelInfo {
     displayName?: string;
     model?: string;
     quotaInfo?: AuthorizedQuotaInfo;
+    // 模型能力字段
+    supportsImages?: boolean;
+    supportsVideo?: boolean;
+    supportsThinking?: boolean;
+    thinkingBudget?: number;
+    minThinkingBudget?: number;
+    maxTokens?: number;
+    maxOutputTokens?: number;
+    recommended?: boolean;
+    tagTitle?: string;
+    supportedMimeTypes?: Record<string, boolean>;
+    isInternal?: boolean;
 }
 
 interface AuthorizedQuotaResponse {
@@ -613,6 +625,11 @@ export class ReactorCore {
                 timeUntilReset,
                 timeUntilResetFormatted: resetTimeValid ? this.formatDelta(timeUntilReset) : (t('common.unknown') || 'Unknown'),
                 resetTimeValid,
+                // 模型能力字段
+                supportsImages: info.supportsImages,
+                isRecommended: info.recommended,
+                tagTitle: info.tagTitle,
+                supportedMimeTypes: info.supportedMimeTypes,
             });
         }
 

@@ -71,6 +71,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     quickPickView = new QuickPickView();
     lastQuotaSource = configService.getConfig().quotaSource === 'authorized' ? 'authorized' : 'local';
 
+    // 注册 Webview Panel Serializer，确保插件重载后能恢复 panel 引用
+    context.subscriptions.push(hud.registerSerializer());
+
     // 设置 QuickPick 刷新回调
     quickPickView.onRefresh(() => {
         reactor.syncTelemetry();
