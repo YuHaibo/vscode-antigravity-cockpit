@@ -85,6 +85,18 @@ export interface ScheduleConfig {
     /** 配额重置时自动唤醒 */
     wakeOnReset?: boolean;
 
+    /** 时段策略：启用后，满额重置只在指定时段内生效 */
+    timeWindowEnabled?: boolean;
+
+    /** 满额重置生效的时间窗口开始时间 (如 "09:00") */
+    timeWindowStart?: string;
+
+    /** 满额重置生效的时间窗口结束时间 (如 "18:00") */
+    timeWindowEnd?: string;
+
+    /** 时段外使用固定时间触发 (如 ["22:00", "07:00"]) */
+    fallbackTimes?: string[];
+
     /** 自定义唤醒词 (默认: "hi") */
     customPrompt?: string;
 }

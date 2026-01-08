@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.2]
+
+### Added
+- **Auto Wake-up**: Time window policy for "Wake on Quota Reset" mode; allows defining active working hours for reset-based triggers and fallback fixed times for non-working hours.
+- **Auto Wake-up**: Status card now displays the selected accounts for auto wake-up, with a consolidated display for multiple accounts and full list in tooltip.
+- **i18n**: Completed full translations for time window settings and account labels across all 14 supported languages.
+
 ## [1.8.1]
 
 ### Changed

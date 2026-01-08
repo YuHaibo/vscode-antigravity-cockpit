@@ -361,6 +361,7 @@ export const en = {
     'autoTrigger.statusLabel': 'Status',
     'autoTrigger.modeLabel': 'Mode',
     'autoTrigger.modelsLabel': 'Models',
+    'autoTrigger.accountsLabel': 'Accounts',
     'autoTrigger.enabled': 'Enabled',
     'autoTrigger.disabled': 'Disabled',
     'autoTrigger.configBtn': 'Configure',
@@ -374,6 +375,14 @@ export const en = {
     'autoTrigger.customPrompt': 'Custom Wake Word',
     'autoTrigger.customPromptPlaceholder': 'Default: hi',
     'autoTrigger.customPromptHint': 'Message sent to AI for wake-up, leave empty to use default "hi".',
+
+    // Time Window Policy
+    'autoTrigger.timeWindowEnabled': 'Enable Time Window Policy',
+    'autoTrigger.timeWindowHint': 'When enabled, quota reset triggers only within the specified time window; outside the window, fixed times are used.',
+    'autoTrigger.timeWindowRange': 'Quota Reset Active Window',
+    'autoTrigger.timeWindowRangeHint': 'Inside this window, full quota triggers wake-up immediately; outside, the fallback times below are used.',
+    'autoTrigger.fallbackTimes': 'Fallback Trigger Times',
+    'autoTrigger.fallbackTimesHint': 'When outside the active window, trigger at these fixed times (multi-select).',
 
     // Multi-Account
     'autoTrigger.accountList': 'Authorized Accounts',

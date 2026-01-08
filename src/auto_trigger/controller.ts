@@ -31,6 +31,8 @@ class AutoTriggerController {
     private quotaModelConstants: string[] = [];
     /** 模型 ID 到模型常量的映射 (id -> modelConstant) */
     private modelIdToConstant: Map<string, string> = new Map();
+    /** Fallback 定时器列表 (时段外固定时间触发) */
+    private fallbackTimers: ReturnType<typeof setTimeout>[] = [];
 
 
     /**
@@ -61,6 +63,10 @@ class AutoTriggerController {
             // 互斥逻辑：wakeOnReset 优先，不启动定时调度器
             if (savedConfig.wakeOnReset && savedConfig.enabled) {
                 logger.info('[AutoTriggerController] Wake on reset mode enabled, scheduler not started');
+                // 如果启用了时段策略且有 fallback 时间，启动 fallback 定时器
+                if (savedConfig.timeWindowEnabled && savedConfig.fallbackTimes?.length) {
+                    this.startFallbackScheduler(savedConfig);
+                }
             } else if (savedConfig.enabled) {
                 logger.info('[AutoTriggerController] Restoring schedule from saved config');
                 schedulerService.setSchedule(savedConfig, () => this.executeTrigger());
@@ -232,9 +238,15 @@ class AutoTriggerController {
         if (config.wakeOnReset) {
             // 配额重置模式：停止定时调度器
             schedulerService.stop();
+            this.stopFallbackScheduler();
             logger.info('[AutoTriggerController] Schedule saved, wakeOnReset mode enabled');
+            // 如果启用了时段策略且有 fallback 时间，启动 fallback 定时器
+            if (config.timeWindowEnabled && config.fallbackTimes?.length) {
+                this.startFallbackScheduler(config);
+            }
         } else if (config.enabled) {
             // 定时/Crontab 模式
+            this.stopFallbackScheduler();
             const accounts = await this.resolveAccountsFromList(config.selectedAccounts);
             if (accounts.length === 0) {
                 throw new Error('请先完成授权');
@@ -244,6 +256,7 @@ class AutoTriggerController {
         } else {
             // 都不启用
             schedulerService.stop();
+            this.stopFallbackScheduler();
             logger.info('[AutoTriggerController] Schedule saved, all triggers disabled');
         }
 
@@ -459,6 +472,15 @@ class AutoTriggerController {
             return;
         }
 
+        // 检查时段策略
+        if (schedule.timeWindowEnabled) {
+            const inWindow = this.isInTimeWindow(schedule.timeWindowStart, schedule.timeWindowEnd);
+            if (!inWindow) {
+                logger.debug('[AutoTriggerController] Outside time window, quota reset trigger skipped (will use fallback times)');
+                return;
+            }
+        }
+
         const accounts = await this.resolveScheduleAccounts(schedule);
         if (accounts.length === 0) {
             logger.debug('[AutoTriggerController] Wake on reset: Not authorized, skipping');
@@ -660,10 +682,153 @@ class AutoTriggerController {
     }
 
     /**
+     * 判断当前时间是否在指定的时间窗口内
+     * @param startTime 开始时间 (如 "09:00")
+     * @param endTime 结束时间 (如 "18:00")
+     * @returns true 如果在窗口内
+     */
+    private isInTimeWindow(startTime?: string, endTime?: string): boolean {
+        if (!startTime || !endTime) {
+            return true; // 未配置时默认在窗口内
+        }
+
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+        const parseTime = (timeStr: string): number => {
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        };
+
+        const startMinutes = parseTime(startTime);
+        const endMinutes = parseTime(endTime);
+
+        // 处理跨天情况 (如 22:00 - 06:00)
+        if (startMinutes <= endMinutes) {
+            // 正常情况: 09:00 - 18:00
+            return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+        } else {
+            // 跨天情况: 22:00 - 06:00
+            return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+        }
+    }
+
+    /**
+     * 启动 fallback 定时器（在时段外的固定时间点触发）
+     */
+    private startFallbackScheduler(config: ScheduleConfig): void {
+        this.stopFallbackScheduler();
+
+        const fallbackTimes = config.fallbackTimes || [];
+        if (fallbackTimes.length === 0) {
+            return;
+        }
+
+        logger.info(`[AutoTriggerController] Starting fallback scheduler with times: ${fallbackTimes.join(', ')}`);
+
+        const scheduleNextFallback = () => {
+            const now = new Date();
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+            // 找到下一个触发时间点
+            const parseTime = (timeStr: string): number => {
+                const [h, m] = timeStr.split(':').map(Number);
+                return h * 60 + m;
+            };
+
+            const times = fallbackTimes.map(t => parseTime(t)).sort((a, b) => a - b);
+            let nextTime = times.find(t => t > currentMinutes);
+
+            // 如果今天没有更多时间点，取明天第一个
+            const isNextDay = nextTime === undefined;
+            if (isNextDay) {
+                nextTime = times[0];
+            }
+
+            // 如果还是没有时间点，退出
+            if (nextTime === undefined) {
+                logger.warn('[AutoTriggerController] No fallback times available');
+                return;
+            }
+
+            // 计算延迟毫秒数
+            let delayMinutes = nextTime - currentMinutes;
+            if (isNextDay) {
+                delayMinutes += 24 * 60;
+            }
+            const delayMs = delayMinutes * 60 * 1000;
+
+            logger.info(`[AutoTriggerController] Next fallback trigger in ${delayMinutes} minutes (${(nextTime / 60) | 0}:${String(nextTime % 60).padStart(2, '0')})`);
+
+            const timer = setTimeout(async () => {
+                // 再次检查是否仍然在时段外
+                if (config.timeWindowEnabled) {
+                    const inWindow = this.isInTimeWindow(config.timeWindowStart, config.timeWindowEnd);
+                    if (inWindow) {
+                        logger.info('[AutoTriggerController] Fallback trigger skipped: now inside time window');
+                        scheduleNextFallback();
+                        return;
+                    }
+                }
+
+                logger.info('[AutoTriggerController] Fallback trigger firing');
+                await this.executeFallbackTrigger(config);
+                scheduleNextFallback();
+            }, delayMs);
+
+            this.fallbackTimers.push(timer);
+        };
+
+        scheduleNextFallback();
+    }
+
+    /**
+     * 停止所有 fallback 定时器
+     */
+    private stopFallbackScheduler(): void {
+        for (const timer of this.fallbackTimers) {
+            clearTimeout(timer);
+        }
+        this.fallbackTimers = [];
+        logger.debug('[AutoTriggerController] Fallback scheduler stopped');
+    }
+
+    /**
+     * 执行 fallback 触发
+     */
+    private async executeFallbackTrigger(config: ScheduleConfig): Promise<void> {
+        const accounts = await this.resolveAccountsFromList(config.selectedAccounts);
+        if (accounts.length === 0) {
+            logger.warn('[AutoTriggerController] Fallback trigger skipped: no valid accounts');
+            return;
+        }
+
+        const selectedModels = config.selectedModels || ['gemini-3-flash'];
+        for (const email of accounts) {
+            const result = await triggerService.trigger(
+                selectedModels,
+                'auto',
+                config.customPrompt,
+                'scheduled', // 标记为 scheduled 类型
+                email,
+            );
+
+            if (result.success) {
+                logger.info(`[AutoTriggerController] Fallback trigger successful for ${email}`);
+            } else {
+                logger.error(`[AutoTriggerController] Fallback trigger failed for ${email}: ${result.message}`);
+            }
+        }
+
+        this.notifyStateUpdate();
+    }
+
+    /**
      * 销毁控制器
      */
     dispose(): void {
         schedulerService.stop();
+        this.stopFallbackScheduler();
         logger.info('[AutoTriggerController] Disposed');
     }
 }

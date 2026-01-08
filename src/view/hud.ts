@@ -545,6 +545,10 @@ export class CockpitHUD {
                         <span class="at-value" id="at-models-value">--</span>
                     </div>
                     <div class="at-status-item">
+                        <span class="at-label">👤 ${t('autoTrigger.accountsLabel') || '账号'}</span>
+                        <span class="at-value" id="at-accounts-value">--</span>
+                    </div>
+                    <div class="at-status-item">
                         <span class="at-label">⏭️ ${t('autoTrigger.nextTrigger')}</span>
                         <span class="at-value" id="at-next-value">--</span>
                     </div>
@@ -707,6 +711,46 @@ export class CockpitHUD {
                             <ul id="at-next-runs-crontab" class="at-preview-list">
                                 <li>${t('autoTrigger.selectTimeHint')}</li>
                             </ul>
+                        </div>
+                    </div>
+
+                    <!-- Quota Reset Time Window Config -->
+                    <div id="at-quota-reset-config-section" class="hidden">
+                        <div class="at-config-section">
+                            <div class="at-config-row">
+                                <label>${t('autoTrigger.timeWindowEnabled')}</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="at-time-window-enabled">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <p class="at-hint">${t('autoTrigger.timeWindowHint')}</p>
+                        </div>
+
+                        <div id="at-time-window-config" class="at-config-section hidden">
+                            <label>${t('autoTrigger.timeWindowRange')}</label>
+                            <p class="at-hint">${t('autoTrigger.timeWindowRangeHint')}</p>
+                            <div class="at-interval-row">
+                                <label>${t('autoTrigger.from')}</label>
+                                <input type="time" id="at-time-window-start" value="09:00" class="at-input-time">
+                                <label>${t('autoTrigger.to')}</label>
+                                <input type="time" id="at-time-window-end" value="18:00" class="at-input-time">
+                            </div>
+
+                            <div class="at-config-section" style="margin-top: 16px;">
+                                <label>${t('autoTrigger.fallbackTimes')}</label>
+                                <p class="at-hint">${t('autoTrigger.fallbackTimesHint')}</p>
+                                <div class="at-time-grid" id="at-fallback-times">
+                                    <div class="at-chip" data-time="06:00">06:00</div>
+                                    <div class="at-chip selected" data-time="07:00">07:00</div>
+                                    <div class="at-chip" data-time="08:00">08:00</div>
+                                </div>
+                                <div class="at-custom-time-row">
+                                    <span class="at-custom-time-label">${t('autoTrigger.customTime')}</span>
+                                    <input type="time" id="at-fallback-custom-time" class="at-input-time at-input-time-compact">
+                                    <button id="at-fallback-add-time" class="at-btn at-btn-secondary at-btn-small">${t('autoTrigger.addTime')}</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

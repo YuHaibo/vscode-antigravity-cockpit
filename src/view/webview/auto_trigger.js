@@ -50,6 +50,12 @@
     const baseDailyTimes = [...baseTimeOptions];
     const baseWeeklyTimes = [...baseTimeOptions];
 
+    // 时段策略配置状态
+    let configTimeWindowEnabled = false;
+    let configTimeWindowStart = '09:00';
+    let configTimeWindowEnd = '18:00';
+    let configFallbackTimes = ['07:00'];
+
     // ============ 初始化 ============
 
     function init() {
@@ -196,6 +202,31 @@
                 updatePreview();
             }
         });
+
+        // 时段策略开关
+        document.getElementById('at-time-window-enabled')?.addEventListener('change', (e) => {
+            configTimeWindowEnabled = e.target.checked;
+            updateTimeWindowConfigVisibility();
+        });
+
+        // 时段策略时间范围
+        document.getElementById('at-time-window-start')?.addEventListener('change', (e) => {
+            configTimeWindowStart = e.target.value;
+        });
+        document.getElementById('at-time-window-end')?.addEventListener('change', (e) => {
+            configTimeWindowEnd = e.target.value;
+        });
+
+        // Fallback 时间选择
+        document.getElementById('at-fallback-times')?.addEventListener('click', (e) => {
+            if (e.target.classList.contains('at-chip')) {
+                const time = e.target.dataset.time;
+                toggleFallbackTimeSelection(time);
+            }
+        });
+
+        // Fallback 自定义时间添加
+        bindCustomTimeInput('at-fallback-custom-time', 'at-fallback-add-time', 'fallback');
 
         // 点击模态框外部关闭（重命名弹框除外）
         document.querySelectorAll('.modal').forEach(modal => {
@@ -367,6 +398,28 @@
             crontabInput.value = s.crontab || '';
         }
         document.getElementById('at-interval-end').value = configIntervalEnd;
+
+        // 恢复时段策略配置
+        configTimeWindowEnabled = s.timeWindowEnabled || false;
+        configTimeWindowStart = s.timeWindowStart || '09:00';
+        configTimeWindowEnd = s.timeWindowEnd || '18:00';
+        configFallbackTimes = s.fallbackTimes || ['07:00'];
+
+        const timeWindowEnabledEl = document.getElementById('at-time-window-enabled');
+        if (timeWindowEnabledEl) {
+            timeWindowEnabledEl.checked = configTimeWindowEnabled;
+        }
+        const timeWindowStartEl = document.getElementById('at-time-window-start');
+        if (timeWindowStartEl) {
+            timeWindowStartEl.value = configTimeWindowStart;
+        }
+        const timeWindowEndEl = document.getElementById('at-time-window-end');
+        if (timeWindowEndEl) {
+            timeWindowEndEl.value = configTimeWindowEnd;
+        }
+        updateFallbackTimeChips();
+        updateTimeWindowConfigVisibility();
+
         renderConfigAccounts();
     }
 
@@ -400,6 +453,13 @@
             crontab: isCrontabMode ? (crontabValue || undefined) : undefined,
             wakeOnReset: wakeOnReset,
             customPrompt: document.getElementById('at-custom-prompt')?.value.trim() || undefined,
+            // 时段策略配置
+            timeWindowEnabled: wakeOnReset ? configTimeWindowEnabled : false,
+            timeWindowStart: wakeOnReset && configTimeWindowEnabled ? configTimeWindowStart : undefined,
+            timeWindowEnd: wakeOnReset && configTimeWindowEnabled ? configTimeWindowEnd : undefined,
+            fallbackTimes: wakeOnReset && configTimeWindowEnabled && configFallbackTimes.length > 0
+                ? configFallbackTimes
+                : undefined,
         };
 
         vscode.postMessage({
@@ -517,6 +577,7 @@
     function updateTriggerModeVisibility() {
         const scheduleSection = document.getElementById('at-schedule-config-section');
         const crontabSection = document.getElementById('at-crontab-config-section');
+        const quotaResetSection = document.getElementById('at-quota-reset-config-section');
         const customPromptSection = document.getElementById('at-custom-prompt-section');
 
         if (scheduleSection) {
@@ -525,12 +586,18 @@
         if (crontabSection) {
             crontabSection.classList.toggle('hidden', configTriggerMode !== 'crontab');
         }
+        if (quotaResetSection) {
+            quotaResetSection.classList.toggle('hidden', configTriggerMode !== 'quota_reset');
+        }
         if (customPromptSection) {
             customPromptSection.classList.remove('hidden');
         }
         updateTriggerModeSelection();
         if (configTriggerMode === 'scheduled') {
             updateModeConfigVisibility();
+        }
+        if (configTriggerMode === 'quota_reset') {
+            updateTimeWindowConfigVisibility();
         }
     }
 
@@ -636,12 +703,80 @@
     }
 
     function addCustomTime(time, mode) {
-        const arr = mode === 'daily' ? configDailyTimes : configWeeklyTimes;
+        let arr;
+        if (mode === 'daily') {
+            arr = configDailyTimes;
+        } else if (mode === 'weekly') {
+            arr = configWeeklyTimes;
+        } else if (mode === 'fallback') {
+            arr = configFallbackTimes;
+        } else {
+            return;
+        }
         if (!arr.includes(time)) {
             arr.push(time);
             arr.sort();
         }
-        updateTimeChips();
+        if (mode === 'fallback') {
+            updateFallbackTimeChips();
+        } else {
+            updateTimeChips();
+        }
+    }
+
+    // ============ 时段策略相关函数 ============
+
+    function updateTimeWindowConfigVisibility() {
+        const timeWindowConfig = document.getElementById('at-time-window-config');
+        if (timeWindowConfig) {
+            timeWindowConfig.classList.toggle('hidden', !configTimeWindowEnabled);
+        }
+    }
+
+    function toggleFallbackTimeSelection(time) {
+        const idx = configFallbackTimes.indexOf(time);
+        if (idx >= 0) {
+            // 至少保留一个时间点
+            if (configFallbackTimes.length > 1) {
+                configFallbackTimes.splice(idx, 1);
+            }
+        } else {
+            configFallbackTimes.push(time);
+        }
+        configFallbackTimes.sort();
+        updateFallbackTimeChips();
+    }
+
+    function updateFallbackTimeChips() {
+        const container = document.getElementById('at-fallback-times');
+        if (!container) return;
+
+        // 确保常用时间点都有 chip（如果不在默认列表中则添加自定义 chip）
+        const defaultTimes = ['06:00', '07:00', '08:00'];
+        
+        // 先移除旧的自定义 chip
+        container.querySelectorAll('.at-chip[data-custom="true"]').forEach(chip => {
+            if (!configFallbackTimes.includes(chip.dataset.time)) {
+                chip.remove();
+            }
+        });
+
+        // 添加不在默认列表里的自定义时间 chip
+        configFallbackTimes.forEach(time => {
+            if (!defaultTimes.includes(time) && !container.querySelector(`.at-chip[data-time="${time}"]`)) {
+                const chip = document.createElement('div');
+                chip.className = 'at-chip at-chip-custom';
+                chip.dataset.time = time;
+                chip.dataset.custom = 'true';
+                chip.textContent = time;
+                container.appendChild(chip);
+            }
+        });
+
+        // 更新所有 chip 的选中状态
+        container.querySelectorAll('.at-chip').forEach(chip => {
+            chip.classList.toggle('selected', configFallbackTimes.includes(chip.dataset.time));
+        });
     }
 
     function toggleDaySelection(day) {
@@ -1235,6 +1370,21 @@
             // 显示所有模型名称，用逗号分隔
             const allNames = modelIds.map(id => getDisplayName(id));
             modelsValue.textContent = allNames.join(', ');
+        }
+
+        // 账号 - 显示所有选中账号
+        const accountsValue = document.getElementById('at-accounts-value');
+        if (accountsValue) {
+            const accountEmails = schedule.selectedAccounts || [];
+            if (accountEmails.length === 0) {
+                accountsValue.textContent = '--';
+            } else if (accountEmails.length === 1) {
+                accountsValue.textContent = accountEmails[0];
+            } else {
+                // 显示第一个账号 + 数量
+                accountsValue.textContent = `${accountEmails[0]} (+${accountEmails.length - 1})`;
+                accountsValue.title = accountEmails.join('\n');
+            }
         }
 
         // 下次触发

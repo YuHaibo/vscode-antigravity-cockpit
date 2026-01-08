@@ -351,6 +351,7 @@ export const zhCN = {
     'autoTrigger.statusLabel': '状态',
     'autoTrigger.modeLabel': '模式',
     'autoTrigger.modelsLabel': '模型',
+    'autoTrigger.accountsLabel': '账号',
     'autoTrigger.enabled': '已启用',
     'autoTrigger.disabled': '未启用',
     'autoTrigger.configBtn': '配置调度',
@@ -374,6 +375,14 @@ export const zhCN = {
     'autoTrigger.modeQuotaReset': '配额重置自动唤醒',
     'autoTrigger.modeQuotaResetHint': '检测到配额恢复满额时自动唤醒一次',
     'autoTrigger.crontabLabel': 'Crontab 表达式',
+
+    // Time Window Policy 时段策略
+    'autoTrigger.timeWindowEnabled': '启用时段策略',
+    'autoTrigger.timeWindowHint': '开启后，满额重置只在指定时段内生效，时段外使用固定时间触发。',
+    'autoTrigger.timeWindowRange': '满额重置生效时段',
+    'autoTrigger.timeWindowRangeHint': '在此时段内，配额满额会立即触发唤醒；时段外将使用下方设置的固定时间触发。',
+    'autoTrigger.fallbackTimes': '时段外触发时间',
+    'autoTrigger.fallbackTimesHint': '不在上述时段时，在这些固定时间点触发唤醒（可多选）。',
 
     // Multi-Account 多账号管理
     'autoTrigger.accountList': '已授权账号',
