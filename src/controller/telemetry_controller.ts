@@ -9,13 +9,16 @@ import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';
 import { QuotaSnapshot } from '../shared/types';
 import { QUOTA_THRESHOLDS, TIMING } from '../shared/constants';
-import { credentialStorage } from '../auto_trigger';
+import { credentialStorage, autoTriggerController } from '../auto_trigger';
 import { announcementService } from '../announcement';
+import { antigravityToolsSyncService } from '../antigravityTools_sync';
+
 
 export class TelemetryController {
     private notifiedModels: Set<string> = new Set();
     private lastSuccessfulUpdate: Date | null = null;
     private consecutiveFailures: number = 0;
+    private antigravityToolsAutoSynced: boolean = false;  // 避免重复执行自动同步
 
     constructor(
         private reactor: ReactorCore,
@@ -97,6 +100,7 @@ export class TelemetryController {
                 dataMasked: config.dataMasked,
                 groupMappings: config.groupMappings,
                 language: config.language,
+                antigravityToolsSyncEnabled: configService.getStateFlag('antigravityToolsSyncEnabled', false),
             });
 
             // 更新 QuickPick 视图数据
@@ -115,6 +119,14 @@ export class TelemetryController {
             } catch (error) {
                 // 公告刷新失败不影响主流程
                 logger.debug(`[TelemetryController] Announcement refresh failed: ${error}`);
+            }
+
+            // 自动同步 Antigravity Tools 账户（仅执行一次）
+            if (!this.antigravityToolsAutoSynced && configService.getStateFlag('antigravityToolsSyncEnabled', false)) {
+                this.antigravityToolsAutoSynced = true;
+                this.performAutoSync().catch(err => {
+                    logger.warn(`[TelemetryController] Auto sync failed: ${err}`);
+                });
             }
         });
 
@@ -253,6 +265,79 @@ export class TelemetryController {
                 this.notifiedModels.delete(`${model.modelId}-warning`);
                 this.notifiedModels.delete(`${model.modelId}-critical`);
             }
+        }
+    }
+
+    /**
+     * 后台自动同步 Antigravity Tools 账户
+     */
+    private async performAutoSync(): Promise<void> {
+        try {
+            const detection = await antigravityToolsSyncService.detect();
+            const activeEmail = await credentialStorage.getActiveAccount();
+
+            // 未检测到 AntigravityTools 数据，静默跳过
+            if (!detection || !detection.currentEmail) {
+                return;
+            }
+
+            const sameAccount = activeEmail
+                ? detection.currentEmail.toLowerCase() === activeEmail.toLowerCase()
+                : false;
+
+            // 账户一致，无需操作
+            if (sameAccount) {
+                return;
+            }
+
+            // 有新账户需要导入
+            if (detection.newEmails.length > 0) {
+                if (this.hud.isVisible()) {
+                    // 面板可见，发送弹框消息（autoConfirm=true 让前端自动确认）
+                    this.hud.sendMessage({
+                        type: 'antigravityToolsSyncPrompt',
+                        data: {
+                            promptType: 'new_accounts',
+                            newEmails: detection.newEmails,
+                            currentEmail: detection.currentEmail,
+                            sameAccount,
+                            autoConfirm: true,
+                        },
+                    });
+                } else {
+                    // 面板不可见，静默导入
+                    await antigravityToolsSyncService.importAndSwitch(activeEmail, false);
+                    // 刷新状态
+                    const state = await autoTriggerController.getState();
+                    this.hud.sendMessage({ type: 'autoTriggerState', data: state });
+                    this.hud.sendMessage({ type: 'antigravityToolsSyncComplete', data: { success: true } });
+                    // 修复：自动导入并切换后，必须同步新账号配额数据
+                    if (configService.getConfig().quotaSource === 'authorized') {
+                        this.reactor.syncTelemetry();
+                    }
+                    vscode.window.showInformationMessage(
+                        t('antigravityToolsSync.autoImported', { email: detection.currentEmail }) 
+                        || `已自动同步账户: ${detection.currentEmail}`
+                    );
+                    logger.info(`AntigravityTools Sync: Auto-imported and switched to ${detection.currentEmail}`);
+                }
+                return;
+            }
+
+            // 只需切换（账户已存在本地）
+            await antigravityToolsSyncService.switchOnly(detection.currentEmail);
+            // 刷新状态
+            const state = await autoTriggerController.getState();
+            this.hud.sendMessage({ type: 'autoTriggerState', data: state });
+            this.hud.sendMessage({ type: 'antigravityToolsSyncComplete', data: { success: true } });
+            // 修复：自动切换账号后必须同步最新配额数据，避免显示旧账号配额
+            if (configService.getConfig().quotaSource === 'authorized') {
+                this.reactor.syncTelemetry();
+            }
+            logger.info(`AntigravityTools Sync: Auto-switched to ${detection.currentEmail}`);
+        } catch (error: unknown) {
+            const err = error instanceof Error ? error.message : String(error);
+            logger.warn(`AntigravityTools Sync auto-sync failed: ${err}`);
         }
     }
 }

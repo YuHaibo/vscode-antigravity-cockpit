@@ -354,6 +354,11 @@ export type WebviewMessageType =
     | 'announcement.getState'
     | 'announcement.markAsRead'
     | 'announcement.markAllAsRead'
+    // Antigravity Tools Sync
+    | 'antigravityToolsSync.import'
+    | 'antigravityToolsSync.importAuto'
+    | 'antigravityToolsSync.importConfirm'
+    | 'antigravityToolsSync.toggle'
     // General
     | 'openUrl'
     | 'executeCommand'
@@ -386,6 +391,8 @@ export interface WebviewMessage {
     displayMode?: 'webview' | 'quickpick';
     /** 数据遮罩状态 (updateDataMasked) */
     dataMasked?: boolean;
+    /** Antigravity Tools 同步开关 */
+    enabled?: boolean;
     /** 语言设置 (updateLanguage) */
     language?: string;
     /** 自定义分组映射 (saveCustomGrouping) */
@@ -403,6 +410,8 @@ export interface WebviewMessage {
     crontab?: string;
     /** 手动测试模型列表 (autoTrigger.test) */
     models?: string[];
+    /** 最大输出 token (autoTrigger.test) */
+    maxOutputTokens?: number;
     /** 账号邮箱 (autoTrigger.removeAccount, autoTrigger.switchAccount) */
     email?: string;
     // Announcements
@@ -414,6 +423,12 @@ export interface WebviewMessage {
     commandId?: string;
     /** 命令参数 (executeCommand) */
     commandArgs?: unknown[];
+    /** 仅导入不切换 (antigravityToolsSync.importConfirm) */
+    importOnly?: boolean;
+    /** 仅切换不导入 (antigravityToolsSync.importConfirm) */
+    switchOnly?: boolean;
+    /** 目标切换邮箱 (antigravityToolsSync.importConfirm) */
+    targetEmail?: string;
 }
 
 /** 调度配置 */
@@ -428,6 +443,7 @@ export interface ScheduleConfig {
     intervalEndTime?: string;
     crontab?: string;
     selectedModels: string[];
+    maxOutputTokens?: number;
 }
 
 /** Dashboard 授权状态 */
@@ -489,6 +505,8 @@ export interface DashboardConfig {
     groupMappings?: Record<string, string>;
     /** 语言设置（'auto' 跟随 VS Code，或具体语言代码） */
     language?: string;
+    /** 是否开启 AntigravityTools 同步（来自 globalState） */
+    antigravityToolsSyncEnabled?: boolean;
 }
 
 /** 状态栏更新数据 */

@@ -99,6 +99,9 @@ export interface ScheduleConfig {
 
     /** 自定义唤醒词 (默认: "hi") */
     customPrompt?: string;
+
+    /** 最大输出 token 数 (默认: 8) */
+    maxOutputTokens?: number;
 }
 
 /**

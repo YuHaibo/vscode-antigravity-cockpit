@@ -175,6 +175,18 @@ body {
     gap: 8px;
 }
 
+.antigravityTools-sync-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.antigravityTools-sync-toggle input {
+    margin: 0;
+}
+
 /* Multi-Account Authorization Styles */
 .quota-auth-header {
     display: flex;
@@ -265,23 +277,23 @@ body {
 }
 
 /* 下拉箭头按钮 */
-.quota-account-dropdown-btn {
+.quota-account-manage-btn {
     background: transparent;
-    border: 1px solid transparent;
+    border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    font-size: 10px;
+    font-size: 12px;
     cursor: pointer;
-    padding: 2px 6px;
-    margin-left: 4px;
-    border-radius: 4px;
+    padding: 4px 10px;
+    margin-left: 6px;
+    border-radius: 6px;
     transition: all 0.2s ease;
     vertical-align: middle;
 }
 
-.quota-account-dropdown-btn:hover {
+.quota-account-manage-btn:hover {
     color: var(--accent);
-    background: rgba(47, 129, 247, 0.1);
     border-color: var(--accent);
+    background: rgba(47, 129, 247, 0.1);
 }
 
 /* ============ 账号管理弹框 ============ */
@@ -1690,6 +1702,136 @@ input:checked+.slider:before {
     animation: modalSlideIn 0.2s ease-out;
 }
 
+.antigravityTools-sync-content {
+    max-width: 520px;
+}
+
+.antigravityTools-sync-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.antigravityTools-sync-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.antigravityTools-sync-count {
+    background: var(--accent);
+    color: #ffffff;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+
+.antigravityTools-sync-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.antigravityTools-sync-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.antigravityTools-sync-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.antigravityTools-sync-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.antigravityTools-sync-chip {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+}
+
+.antigravityTools-sync-current {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    background: rgba(47, 129, 247, 0.12);
+    border: 1px solid rgba(47, 129, 247, 0.35);
+}
+
+.antigravityTools-sync-current.antigravityTools-sync-highlight {
+    background: rgba(35, 134, 54, 0.15);
+    border-color: rgba(35, 134, 54, 0.5);
+    color: var(--success);
+    font-weight: 500;
+}
+
+.antigravityTools-sync-notice {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    text-align: center;
+    padding: 8px 0;
+}
+
+.antigravityTools-sync-note {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* AntigravityTools Sync Modal Footer */
+.antigravityTools-sync-footer {
+    justify-content: space-between;
+}
+
+.antigravityTools-sync-action-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.antigravityTools-sync-mode-select {
+    padding: 8px 28px 8px 12px;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+
+.antigravityTools-sync-mode-select:hover {
+    border-color: var(--accent);
+}
+
+.antigravityTools-sync-mode-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.2);
+}
+
+.antigravityTools-sync-mode-select option {
+    background: var(--card-bg);
+    color: var(--text-primary);
+    padding: 8px;
+}
+
 @keyframes modalSlideIn {
     from {
         opacity: 0;
@@ -3022,4 +3164,113 @@ input:checked+.slider:before {
     color: var(--text-secondary);
     margin-top: 4px;
     text-align: center;
+}
+
+/* ============ Antigravity Tools 同步配置弹框 ============ */
+
+.at-sync-config-content {
+    max-width: 480px;
+}
+
+.at-sync-config-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.at-sync-section {
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.at-sync-info-section {
+    background: rgba(47, 129, 247, 0.05);
+    border-color: rgba(47, 129, 247, 0.2);
+}
+
+.at-sync-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
+
+.at-sync-description {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+.at-sync-path-info,
+.at-sync-data-list {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.at-sync-path-label,
+.at-sync-data-label {
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.at-sync-path {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    font-size: 12px;
+    color: #7ee787;
+}
+
+.at-sync-data-items {
+    color: var(--text-primary);
+}
+
+.at-sync-toggle-row {
+    margin-bottom: 10px;
+}
+
+.at-sync-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.at-sync-toggle-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--accent);
+}
+
+.at-sync-import-btn {
+    width: 100%;
+    margin-top: 8px;
+}
+
+/* Outline button style */
+.at-btn-outline {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.at-btn-outline:hover {
+    background: var(--accent);
+    color: white;
 }

@@ -12,6 +12,7 @@ import { cloudCodeClient } from '../shared/cloudcode_client';
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const RESET_TRIGGER_COOLDOWN_MS = 10 * 60 * 1000;
 const MAX_TRIGGER_CONCURRENCY = 4;
+const DEFAULT_MAX_OUTPUT_TOKENS = 0;  // 0 means no limit
 const ANTIGRAVITY_SYSTEM_PROMPT = 'You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**';
 
 /**
@@ -194,10 +195,12 @@ class TriggerService {
         customPrompt?: string,
         triggerSource?: 'manual' | 'scheduled' | 'crontab' | 'quota_reset',
         accountEmail?: string,
+        maxOutputTokens?: number,
     ): Promise<TriggerRecord> {
         const startTime = Date.now();
         const triggerModels = (models && models.length > 0) ? models : ['gemini-3-flash'];
         const promptText = customPrompt || 'hi';  // 使用自定义或默认唤醒词
+        const resolvedMaxOutputTokens = this.normalizeMaxOutputTokens(maxOutputTokens);
         let stage = 'start';
         const accountLabel = accountEmail ? ` (${accountEmail})` : '';
         
@@ -242,7 +245,7 @@ class TriggerService {
                     const started = Date.now();
                     try {
                         stage = `send_trigger_request:${model}`;
-                        const reply = await this.sendTriggerRequest(accessToken, projectId, model, promptText);
+                        const reply = await this.sendTriggerRequest(accessToken, projectId, model, promptText, resolvedMaxOutputTokens);
                         results[currentIndex] = {
                             model,
                             ok: true,
@@ -275,12 +278,12 @@ class TriggerService {
                         ? `, tokens=${result.promptTokens ?? '?'}+${result.completionTokens ?? '?'}=${result.totalTokens ?? '?'}`
                         : '';
                     const traceLabel = result.traceId ? `, traceId=${result.traceId}` : '';
-                    return `${result.model}: ${result.message} (${result.duration}ms${tokensLabel}${traceLabel})`;
+                    return `[[${result.model}]]: ${result.message} (${result.duration}ms${tokensLabel}${traceLabel})`;
                 });
             const failureLines = results
                 .filter(result => !result.ok)
-                .map(result => `${result.model}: ERROR ${result.message} (${result.duration}ms)`);
-            const summary = [...successLines, ...failureLines].join('\n');
+                .map(result => `[[${result.model}]]: ERROR ${result.message} (${result.duration}ms)`);
+            const summary = [...successLines, ...failureLines].join('\n\n');
             const successCount = successLines.length;
             const failureCount = failureLines.length;
             const hasSuccess = successCount > 0;
@@ -290,7 +293,7 @@ class TriggerService {
             const record: TriggerRecord = {
                 timestamp: new Date().toISOString(),
                 success: hasSuccess,
-                prompt: `[${triggerModels.join(', ')}] ${promptText}`,
+                prompt: `唤醒词：${promptText}`,
                 message: summary,
                 duration: Date.now() - startTime,
                 totalTokens: tokensSummary?.totalTokens,
@@ -321,7 +324,7 @@ class TriggerService {
             const record: TriggerRecord = {
                 timestamp: new Date().toISOString(),
                 success: false,
-                prompt: `[${triggerModels.join(', ')}] ${promptText}`,
+                prompt: `唤醒词：${promptText}`,
                 message: err.message,
                 duration: Date.now() - startTime,
                 traceId: undefined,
@@ -470,7 +473,14 @@ class TriggerService {
         return allModels;
     }
 
-    private buildTriggerRequestBody(projectId: string, requestId: string, sessionId: string, model: string, prompt: string) {
+    private buildTriggerRequestBody(
+        projectId: string,
+        requestId: string,
+        sessionId: string,
+        model: string,
+        prompt: string,
+        maxOutputTokens: number,
+    ) {
         return {
             project: projectId,
             requestId: requestId,
@@ -489,7 +499,8 @@ class TriggerService {
                     parts: [{ text: ANTIGRAVITY_SYSTEM_PROMPT }],
                 },
                 generationConfig: {
-                    maxOutputTokens: 8,
+                    // maxOutputTokens: 0 means no limit (don't include in request)
+                    ...(maxOutputTokens > 0 ? { maxOutputTokens } : {}),
                     temperature: 0,
                 },
             },
@@ -517,6 +528,10 @@ class TriggerService {
             const parts = candidate?.content?.parts;
             if (Array.isArray(parts)) {
                 for (const part of parts) {
+                    // Skip thinking content (thought summaries from Gemini thinking models)
+                    if (part && part.thought === true) {
+                        continue;
+                    }
                     const text = (part && typeof part.text === 'string') ? part.text : undefined;
                     if (text) {
                         replyParts.push(text);
@@ -562,7 +577,13 @@ class TriggerService {
      * @param prompt 唤醒词，默认 "hi"
      * @returns AI 的简短回复
      */
-    private async sendTriggerRequest(accessToken: string, projectId: string, model: string, prompt: string = 'hi'): Promise<{
+    private async sendTriggerRequest(
+        accessToken: string,
+        projectId: string,
+        model: string,
+        prompt: string = 'hi',
+        maxOutputTokens: number,
+    ): Promise<{
         reply: string;
         promptTokens?: number;
         completionTokens?: number;
@@ -573,7 +594,7 @@ class TriggerService {
         const sessionId = this.generateSessionId();
         const requestId = this.generateRequestId();
 
-        const requestBody = this.buildTriggerRequestBody(projectId, requestId, sessionId, model, prompt);
+        const requestBody = this.buildTriggerRequestBody(projectId, requestId, sessionId, model, prompt, maxOutputTokens);
 
         let result: { data: any; text: string; status: number };
         try {
@@ -626,6 +647,14 @@ class TriggerService {
      */
     private generateRequestId(): string {
         return `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    }
+
+    private normalizeMaxOutputTokens(value?: number): number {
+        // 0 means no limit, negative or invalid values fall back to default
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+            return DEFAULT_MAX_OUTPUT_TOKENS;
+        }
+        return Math.floor(value);
     }
 }
 

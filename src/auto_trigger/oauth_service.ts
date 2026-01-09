@@ -10,6 +10,7 @@ import { URL } from 'url';
 import { OAuthCredential } from './types';
 import { credentialStorage } from './credential_storage';
 import { logger } from '../shared/log_service';
+import { t } from '../shared/i18n';
 
 // Antigravity OAuth 配置
 const ANTIGRAVITY_CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
@@ -68,15 +69,15 @@ class OAuthService {
                 } catch (copyError) {
                     logger.warn('[OAuthService] Failed to copy auth URL to clipboard', copyError);
                 }
-                vscode.window.showWarningMessage('无法自动打开浏览器，已复制授权链接，请手动打开完成授权。');
+                vscode.window.showWarningMessage(t('oauth.browserOpenFailed'));
             }
 
             // 5. 显示等待提示
             vscode.window.showInformationMessage(
-                '🔗 正在等待 Google 授权...\n请在浏览器中完成登录并授权。',
-                '取消'
+                t('oauth.waiting'),
+                t('common.cancel')
             ).then(selection => {
-                if (selection === '取消') {
+                if (selection === t('common.cancel')) {
                     this.cancelPendingAuth();
                 }
             });
@@ -98,7 +99,7 @@ class OAuthService {
                 logger.info(`[OAuthService] Account ${email} exists, updating credentials`);
                 await credentialStorage.saveCredential(credential);
                 await credentialStorage.clearAccountInvalid(email);
-                vscode.window.showInformationMessage(`✅ Re-authorization successful / 重新授权成功: ${email}`);
+                vscode.window.showInformationMessage(t('oauth.reauthSuccess', { email }));
                 return true;
             }
 
@@ -107,7 +108,7 @@ class OAuthService {
 
             // 11. 显示成功提示
             if (result === 'added') {
-                vscode.window.showInformationMessage(`✅ Authorization successful! Account added / 授权成功！已添加账号: ${email}`);
+                vscode.window.showInformationMessage(t('oauth.authSuccess', { email }));
             }
 
             logger.info(`[OAuthService] Authorization successful: ${email}`);
@@ -116,7 +117,7 @@ class OAuthService {
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             logger.error(`[OAuthService] Authorization failed: ${err.message}`);
-            vscode.window.showErrorMessage(`❌ Authorization failed / 授权失败: ${err.message}`);
+            vscode.window.showErrorMessage(t('oauth.authFailed', { message: err.message }));
             return false;
 
         } finally {
@@ -130,7 +131,7 @@ class OAuthService {
     async revokeAuthorization(): Promise<void> {
         await credentialStorage.deleteCredential();
         logger.info('[OAuthService] All authorizations revoked');
-        vscode.window.showInformationMessage('✅ All authorizations revoked / 已取消所有授权');
+        vscode.window.showInformationMessage(t('oauth.allRevoked'));
     }
 
     /**
@@ -140,7 +141,7 @@ class OAuthService {
     async revokeAccount(email: string): Promise<void> {
         await credentialStorage.deleteCredentialForAccount(email);
         logger.info(`[OAuthService] Account ${email} revoked`);
-        vscode.window.showInformationMessage(`✅ Account removed / 已移除账号: ${email}`);
+        vscode.window.showInformationMessage(t('autoTrigger.accountRemoved', { email }));
     }
 
     /**
@@ -185,6 +186,73 @@ class OAuthService {
         }
 
         return { state: 'ok', token: credential.accessToken };
+    }
+
+    /**
+     * 使用 refresh_token 直接构造完整 OAuth 凭证（无需用户交互）
+     * 适用于从 Antigravity Tools 导入的 token
+     */
+    async buildCredentialFromRefreshToken(refreshToken: string, fallbackEmail?: string): Promise<OAuthCredential> {
+        try {
+            const response = await fetch(TOKEN_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    client_id: ANTIGRAVITY_CLIENT_ID,
+                    client_secret: ANTIGRAVITY_CLIENT_SECRET,
+                    refresh_token: refreshToken,
+                    grant_type: 'refresh_token',
+                }).toString(),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                const lowered = errorText.toLowerCase();
+                if (lowered.includes('invalid_grant')) {
+                    throw new Error('refresh_token 已失效 (invalid_grant)');
+                }
+                throw new Error(`刷新失败: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json() as {
+                access_token: string;
+                expires_in: number;
+                scope?: string;
+            };
+
+            const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
+            const scopes = data.scope ? data.scope.split(' ') : ANTIGRAVITY_SCOPES;
+
+            let email = fallbackEmail;
+            try {
+                email = await this.fetchUserEmail(data.access_token);
+            } catch (e) {
+                const err = e instanceof Error ? e.message : String(e);
+                logger.warn(`[OAuthService] 获取用户邮箱失败，使用备用邮箱: ${err}`);
+            }
+
+            if (!email) {
+                throw new Error('无法确定账号邮箱，拒绝同步');
+            }
+
+            return {
+                clientId: ANTIGRAVITY_CLIENT_ID,
+                clientSecret: ANTIGRAVITY_CLIENT_SECRET,
+                accessToken: data.access_token,
+                refreshToken,
+                expiresAt,
+                scopes,
+                email,
+                projectId: undefined,
+                isInvalid: false,
+            };
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.error(`[OAuthService] 通过 refresh_token 构造凭证失败: ${err.message}`);
+            throw err;
+        }
     }
 
     /**

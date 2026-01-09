@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.31]
+
+### Added
+- **Antigravity Tools Sync**: Seamlessly import accounts from Antigravity Tools with automatic token refresh; supports both "Import and Switch" and "Import Only" modes.
+- **Manager Sync UI**: New dashboard section for Antigravity Tools account synchronization with import mode dropdown selector.
+- **Auto Wake-up**: Added `maxOutputTokens` configuration option for wake-up triggers.
+
+### Changed
+- **Account Management**: Improved account removal logic; schedule automatically disables when all selected accounts are removed.
+- **Auto Wake-up**: Enhanced account candidate resolution; strictly respects explicitly configured account lists without fallback behavior.
+- **Auto Wake-up History**: Improved trigger history formatting with grouped per-model results and highlights.
+- **OAuth Service**: Optimized token refresh flow with improved error handling for imported accounts.
+- **i18n**: Added translations for Manager Sync, import modes, and OAuth notifications across all 14 supported languages.
+- **QuickPick**: Reset time display now follows the system locale.
+- **Status Bar**: Reset countdown now includes local reset time.
+
+### Fixed
+- **Schedule Config**: Schedule state now properly persists when selected accounts change due to account removal.
+
+---
+
 ## [1.8.2]
 
 ### Added

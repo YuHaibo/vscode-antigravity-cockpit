@@ -10,6 +10,7 @@ import { TIMING } from '../shared/constants';
 import { autoTriggerController } from '../auto_trigger/controller';
 import { credentialStorage } from '../auto_trigger';
 import { announcementService } from '../announcement';
+import { antigravityToolsSyncService } from '../antigravityTools_sync';
 
 export class MessageController {
     // 跟踪已通知的模型以避免重复弹窗 (虽然主要逻辑在 TelemetryController，但 CheckAndNotify 可能被消息触发吗? 不, 主要是 handleMessage)
@@ -381,6 +382,55 @@ export class MessageController {
                     }
                     break;
 
+                case 'antigravityToolsSync.import':
+                    await this.handleAntigravityToolsImport(false);
+                    break;
+
+                case 'antigravityToolsSync.importAuto':
+                    await this.handleAntigravityToolsImport(true);
+                    break;
+
+                case 'antigravityToolsSync.importConfirm':
+                    {
+                        const activeEmail = await credentialStorage.getActiveAccount();
+                        const importOnly = message.importOnly === true;
+                        const switchOnly = message.switchOnly === true;
+                        const targetEmail = message.targetEmail as string | undefined;
+
+                        if (switchOnly && targetEmail) {
+                            // 纯切换场景：直接调用快速切换，无需网络请求
+                            await antigravityToolsSyncService.switchOnly(targetEmail);
+                            const state = await autoTriggerController.getState();
+                            this.hud.sendMessage({ type: 'autoTriggerState', data: state });
+                            this.hud.sendMessage({ type: 'antigravityToolsSyncComplete', data: { success: true } });
+                            // 修复：切换账号后必须强制执行 syncTelemetry 来获取新账号配额，而不是 reprocess 旧缓存
+                            if (configService.getConfig().quotaSource === 'authorized') {
+                                this.reactor.syncTelemetry();
+                            }
+                            vscode.window.showInformationMessage(
+                                t('autoTrigger.accountSwitched', { email: targetEmail }) 
+                                || `已切换至账号: ${targetEmail}`
+                            );
+                        } else {
+                            // 需要导入的场景
+                            await this.performAntigravityToolsImport(activeEmail, false, importOnly);
+                        }
+                    }
+                    break;
+
+                case 'antigravityToolsSync.toggle':
+                    if (typeof message.enabled === 'boolean') {
+                        await configService.setStateFlag('antigravityToolsSyncEnabled', message.enabled);
+                        this.hud.sendMessage({
+                            type: 'antigravityToolsSyncStatus',
+                            data: { enabled: message.enabled },
+                        });
+                        if (message.enabled) {
+                            await this.handleAntigravityToolsImport(true);
+                        }
+                    }
+                    break;
+
                 case 'updateLanguage':
                     // 更新语言设置
                     if (message.language !== undefined) {
@@ -489,11 +539,20 @@ export class MessageController {
                             : undefined;
                         // 获取自定义唤醒词
                         const customPrompt = (message as { customPrompt?: string }).customPrompt;
+                        const rawMaxOutputTokens = (message as { maxOutputTokens?: unknown }).maxOutputTokens;
+                        const parsedMaxOutputTokens = typeof rawMaxOutputTokens === 'number'
+                            ? rawMaxOutputTokens
+                            : (typeof rawMaxOutputTokens === 'string' ? Number(rawMaxOutputTokens) : undefined);
+                        const maxOutputTokens = typeof parsedMaxOutputTokens === 'number'
+                            && Number.isFinite(parsedMaxOutputTokens)
+                            && parsedMaxOutputTokens > 0
+                            ? Math.floor(parsedMaxOutputTokens)
+                            : undefined;
                         const rawAccounts = (message as { accounts?: unknown }).accounts;
                         const testAccounts = Array.isArray(rawAccounts)
                             ? rawAccounts.filter((email): email is string => typeof email === 'string' && email.length > 0)
                             : undefined;
-                        const result = await autoTriggerController.triggerNow(testModels, customPrompt, testAccounts);
+                        const result = await autoTriggerController.triggerNow(testModels, customPrompt, testAccounts, maxOutputTokens);
                         const state = await autoTriggerController.getState();
                         this.hud.sendMessage({
                             type: 'autoTriggerState',
@@ -686,5 +745,164 @@ export class MessageController {
 
             }
         });
+    }
+
+    /**
+     * 读取 AntigravityTools 账号，必要时弹框提示用户确认
+     * @param isAuto 是否自动模式
+     */
+    private async handleAntigravityToolsImport(isAuto: boolean): Promise<void> {
+        try {
+            const detection = await antigravityToolsSyncService.detect();
+            const activeEmail = await credentialStorage.getActiveAccount();
+            
+            // 场景 A：未检测到 AntigravityTools 数据
+            if (!detection || !detection.currentEmail) {
+                if (!isAuto) {
+                    // 手动触发时，提示未检测到
+                    this.hud.sendMessage({
+                        type: 'antigravityToolsSyncPrompt',
+                        data: {
+                            promptType: 'not_found',
+                        },
+                    });
+                }
+                return;
+            }
+
+            const sameAccount = activeEmail
+                ? detection.currentEmail.toLowerCase() === activeEmail.toLowerCase()
+                : false;
+
+            // 场景 B：有新账户需要导入
+            if (detection.newEmails.length > 0) {
+                if (isAuto) {
+                    // 自动模式：根据面板可见性决定弹框或静默
+                    if (this.hud.isVisible()) {
+                        // 面板可见，弹框 + 自动确认
+                        this.hud.sendMessage({
+                            type: 'antigravityToolsSyncPrompt',
+                            data: {
+                                promptType: 'new_accounts',
+                                newEmails: detection.newEmails,
+                                currentEmail: detection.currentEmail,
+                                sameAccount,
+                                autoConfirm: true,
+                            },
+                        });
+                    } else {
+                        // 面板不可见，静默导入
+                        await this.performAntigravityToolsImport(activeEmail, true, false);
+                        vscode.window.showInformationMessage(
+                            t('antigravityToolsSync.autoImported', { email: detection.currentEmail }) 
+                            || `已自动同步账户: ${detection.currentEmail}`
+                        );
+                    }
+                } else {
+                    // 手动模式，弹框让用户选择
+                    this.hud.sendMessage({
+                        type: 'antigravityToolsSyncPrompt',
+                        data: {
+                            promptType: 'new_accounts',
+                            newEmails: detection.newEmails,
+                            currentEmail: detection.currentEmail,
+                            sameAccount,
+                            autoConfirm: false,
+                        },
+                    });
+                }
+                return;
+            }
+
+            // 场景 C：无新增，且账号一致则无需切换
+            if (sameAccount) {
+                if (!isAuto) {
+                    vscode.window.showInformationMessage(t('antigravityToolsSync.alreadySynced') || '已同步，无需切换');
+                }
+                return;
+            }
+
+            // 场景 D：无新增账户，但账户不一致
+            if (isAuto) {
+                // 自动模式：静默切换（无需网络请求，瞬间完成）
+                await antigravityToolsSyncService.switchOnly(detection.currentEmail);
+                // 刷新状态
+                const state = await autoTriggerController.getState();
+                this.hud.sendMessage({ type: 'autoTriggerState', data: state });
+                this.hud.sendMessage({ type: 'antigravityToolsSyncComplete', data: { success: true } });
+                // 修复：账号切换后必须立即请求获取新账号的配额数据
+                if (configService.getConfig().quotaSource === 'authorized') {
+                    this.reactor.syncTelemetry();
+                }
+                logger.info(`AntigravityTools Sync: Auto-switched to ${detection.currentEmail}`);
+            } else {
+                // 手动模式：弹框询问
+                this.hud.sendMessage({
+                    type: 'antigravityToolsSyncPrompt',
+                    data: {
+                        promptType: 'switch_only',
+                        currentEmail: detection.currentEmail,
+                        localEmail: activeEmail,
+                        currentEmailExistsLocally: detection.currentEmailExistsLocally,
+                        autoConfirm: false,
+                    },
+                });
+            }
+        } catch (error) {
+            const err = error instanceof Error ? error.message : String(error);
+            logger.warn(`Antigravity Tools sync detection failed: ${err}`);
+            if (!isAuto) {
+                vscode.window.showWarningMessage(err);
+            }
+        }
+    }
+
+    /**
+     * 真正执行导入 + 切换，并刷新前端状态
+     * @param importOnly 如果为 true，仅导入账户而不切换
+     */
+    private async performAntigravityToolsImport(activeEmail?: string | null, isAuto: boolean = false, importOnly: boolean = false): Promise<void> {
+        try {
+            const result = await antigravityToolsSyncService.importAndSwitch(activeEmail, importOnly);
+            const state = await autoTriggerController.getState();
+            this.hud.sendMessage({
+                type: 'autoTriggerState',
+                data: state,
+            });
+
+            // 通知前端导入完成
+            this.hud.sendMessage({
+                type: 'antigravityToolsSyncComplete',
+                data: { success: true },
+            });
+
+            // 如果配额来源是授权模式，自动刷新配额数据
+            if (configService.getConfig().quotaSource === 'authorized') {
+                this.reactor.syncTelemetry();
+            }
+
+            if (!isAuto) {
+                let message: string;
+                if (importOnly) {
+                    message = t('antigravityToolsSync.imported');
+                } else {
+                    message = result.switched
+                        ? t('antigravityToolsSync.switched', { email: result.currentEmail })
+                        : t('antigravityToolsSync.alreadySynced');
+                }
+                vscode.window.showInformationMessage(message);
+            }
+        } catch (error) {
+            const err = error instanceof Error ? error.message : String(error);
+            logger.warn(`Antigravity Tools import failed: ${err}`);
+
+            // 通知前端导入失败
+            this.hud.sendMessage({
+                type: 'antigravityToolsSyncComplete',
+                data: { success: false, error: err },
+            });
+
+            vscode.window.showWarningMessage(err);
+        }
     }
 }

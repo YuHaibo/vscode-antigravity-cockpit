@@ -226,10 +226,13 @@ export class StatusBarController {
             const icon = this.getStatusIcon(pct, config);
             const bar = this.generateCompactProgressBar(pct);
             const resetTime = model.timeUntilResetFormatted || '-';
+            // 添加本地时间显示，只取时间部分（如 18:45）
+            const localTime = model.resetTimeDisplay?.split(' ')[1] || '';
+            const resetDisplay = localTime ? `${resetTime} (${localTime})` : resetTime;
 
             // 使用完整模型名称
             const pctDisplay = (Math.floor(pct * 100) / 100).toFixed(2);
-            md.appendMarkdown(`| ${icon} **${model.label}** | \`${bar}\` | ${pctDisplay}% → ${resetTime} |\n`);
+            md.appendMarkdown(`| ${icon} **${model.label}** | \`${bar}\` | ${pctDisplay}% → ${resetDisplay} |\n`);
         }
 
         // 自动唤醒下次触发时间

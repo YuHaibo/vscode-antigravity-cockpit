@@ -34,6 +34,7 @@
     let selectedAccounts = [];  // 从 state.schedule.selectedAccounts 获取
     let availableAccounts = [];
     let activeAccountEmail = '';
+    let antigravityToolsSyncEnabled = false;
     let testSelectedModels = [];
     let testSelectedAccounts = [];
 
@@ -47,6 +48,7 @@
     let configIntervalHours = 4;
     let configIntervalStart = '07:00';
     let configIntervalEnd = '22:00';
+    let configMaxOutputTokens = 0;
     const baseDailyTimes = [...baseTimeOptions];
     const baseWeeklyTimes = [...baseTimeOptions];
 
@@ -55,8 +57,48 @@
     let configTimeWindowStart = '09:00';
     let configTimeWindowEnd = '18:00';
     let configFallbackTimes = ['07:00'];
+    let testMaxOutputTokens = 0;
 
     // ============ 初始化 ============
+
+    function parseNonNegativeInt(value, fallback) {
+        const parsed = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
+        // Allow 0 as a valid value (means no limit)
+        if (!Number.isFinite(parsed) || parsed < 0) {
+            return fallback;
+        }
+        return Math.floor(parsed);
+    }
+
+    function setAntigravityToolsSyncEnabled(enabled) {
+        if (typeof enabled !== 'boolean') {
+            return;
+        }
+        antigravityToolsSyncEnabled = enabled;
+        const checkbox = document.getElementById('at-antigravityTools-sync-checkbox');
+        if (checkbox) {
+            checkbox.checked = enabled;
+        }
+    }
+
+    function attachAntigravityToolsSyncActions() {
+        const checkbox = document.getElementById('at-antigravityTools-sync-checkbox');
+        const importBtn = document.getElementById('at-antigravityTools-import-btn');
+
+        checkbox?.addEventListener('change', (e) => {
+            const target = e.target;
+            if (!(target instanceof HTMLInputElement)) {
+                return;
+            }
+            const enabled = target.checked;
+            antigravityToolsSyncEnabled = enabled;
+            vscode.postMessage({ command: 'antigravityToolsSync.toggle', enabled });
+        });
+
+        importBtn?.addEventListener('click', () => {
+            vscode.postMessage({ command: 'antigravityToolsSync.import' });
+        });
+    }
 
     function init() {
         vscode.postMessage({ command: 'autoTrigger.getState' });
@@ -276,6 +318,13 @@
             testSelectedAccounts = [activeAccountEmail];
         }
 
+        const testMaxOutputTokensInput = document.getElementById('at-test-max-output-tokens');
+        if (testMaxOutputTokensInput) {
+            const scheduleTokens = currentState?.schedule?.maxOutputTokens;
+            testMaxOutputTokens = parseNonNegativeInt(scheduleTokens, configMaxOutputTokens);
+            testMaxOutputTokensInput.value = String(testMaxOutputTokens);
+        }
+
         renderTestModels();
         renderTestAccounts();
         document.getElementById('at-test-modal')?.classList.remove('hidden');
@@ -392,6 +441,12 @@
             customPromptInput.value = s.customPrompt || '';
         }
 
+        configMaxOutputTokens = parseNonNegativeInt(s.maxOutputTokens, 0);
+        const maxOutputTokensInput = document.getElementById('at-max-output-tokens');
+        if (maxOutputTokensInput) {
+            maxOutputTokensInput.value = String(configMaxOutputTokens);
+        }
+
         // 恢复 Crontab
         const crontabInput = document.getElementById('at-crontab-input');
         if (crontabInput) {
@@ -437,6 +492,12 @@
             return;
         }
 
+        const maxOutputTokens = parseNonNegativeInt(
+            document.getElementById('at-max-output-tokens')?.value,
+            0,
+        );
+        configMaxOutputTokens = maxOutputTokens;
+
         const config = {
             enabled: configEnabled,
             repeatMode: configMode,
@@ -453,6 +514,7 @@
             crontab: isCrontabMode ? (crontabValue || undefined) : undefined,
             wakeOnReset: wakeOnReset,
             customPrompt: document.getElementById('at-custom-prompt')?.value.trim() || undefined,
+            maxOutputTokens: maxOutputTokens,
             // 时段策略配置
             timeWindowEnabled: wakeOnReset ? configTimeWindowEnabled : false,
             timeWindowStart: wakeOnReset && configTimeWindowEnabled ? configTimeWindowStart : undefined,
@@ -512,6 +574,11 @@
 
         // 获取自定义唤醒词
         const customPrompt = document.getElementById('at-test-custom-prompt')?.value.trim() || undefined;
+        const maxOutputTokens = parseNonNegativeInt(
+            document.getElementById('at-test-max-output-tokens')?.value,
+            configMaxOutputTokens,
+        );
+        testMaxOutputTokens = maxOutputTokens;
 
         // 设置加载状态
         isTestRunning = true;
@@ -532,6 +599,7 @@
             models: [...testSelectedModels],
             customPrompt: customPrompt,
             accounts: [...testSelectedAccounts],
+            maxOutputTokens: maxOutputTokens,
         });
     }
 
@@ -826,7 +894,7 @@
         if (!container) return;
 
         if (!availableAccounts || availableAccounts.length === 0) {
-            container.innerHTML = `<div class="at-no-data">${t('autoTrigger.noAccounts') || '暂无已授权账号'}</div>`;
+            container.innerHTML = `<div class="at-no-data">${t('autoTrigger.noAccounts')}</div>`;
             return;
         }
 
@@ -888,7 +956,7 @@
         if (!container) return;
 
         if (!availableAccounts || availableAccounts.length === 0) {
-            container.innerHTML = `<div class="at-no-data">${t('autoTrigger.noAccounts') || '暂无已授权账号'}</div>`;
+            container.innerHTML = `<div class="at-no-data">${t('autoTrigger.noAccounts')}</div>`;
             return;
         }
 
@@ -941,10 +1009,10 @@
             // 显示请求内容和响应
             let contentHtml = '';
             if (trigger.prompt) {
-                contentHtml += `<div class="at-history-prompt">📤 ${escapeHtml(trigger.prompt)}</div>`;
+                contentHtml += `<div class="at-history-prompt">${escapeHtml(trigger.prompt)}</div>`;
             }
             if (trigger.message) {
-                contentHtml += `<div class="at-history-response">📥 ${escapeHtml(trigger.message)}</div>`;
+                contentHtml += `<div class="at-history-response">${formatResponseMessage(trigger.message)}</div>`;
             }
             if (!contentHtml) {
                 contentHtml = `<div class="at-history-message">${statusText}</div>`;
@@ -985,6 +1053,22 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // 格式化回复消息，识别 [[模型名]] 标记并高亮
+    function formatResponseMessage(message) {
+        if (!message) return '';
+        
+        // 先转义 HTML
+        let escaped = escapeHtml(message);
+        
+        // 识别 [[xxx]] 标记并替换为高亮标签
+        escaped = escaped.replace(/\[\[([^\]]+)\]\]/g, '<span class="at-model-name">$1</span>');
+        
+        // 将双换行转为 <br><br>
+        escaped = escaped.replace(/\n\n/g, '<br><br>');
+        
+        return escaped;
     }
 
     function updatePreview() {
@@ -1173,25 +1257,23 @@
         const accounts = state.authorization?.accounts || [];
         availableAccounts = accounts.map(acc => acc.email).filter(Boolean);
         activeAccountEmail = state.authorization?.activeAccount || state.authorization?.email || availableAccounts[0] || '';
-        if (Array.isArray(state.schedule?.selectedAccounts) && state.schedule.selectedAccounts.length > 0) {
+        if (Array.isArray(state.schedule?.selectedAccounts)) {
             selectedAccounts = state.schedule.selectedAccounts.filter(email => availableAccounts.includes(email));
-            if (selectedAccounts.length === 0 && activeAccountEmail) {
-                selectedAccounts = [activeAccountEmail];
-            }
         } else if (activeAccountEmail) {
             selectedAccounts = [activeAccountEmail];
         }
-        if (testSelectedAccounts.length > 0) {
+
+        if (Array.isArray(testSelectedAccounts) && testSelectedAccounts.length > 0) {
             testSelectedAccounts = testSelectedAccounts.filter(email => availableAccounts.includes(email));
-        }
-        if (testSelectedAccounts.length === 0 && activeAccountEmail) {
+        } else if (activeAccountEmail) {
             testSelectedAccounts = [activeAccountEmail];
         }
-        if (availableModels.length > 0) {
-            selectedModels = selectedModels.filter(id => availableModels.some(model => model.id === id));
-            if (selectedModels.length === 0) {
-                selectedModels = [availableModels[0].id];
-            }
+
+        if (Array.isArray(state.schedule?.selectedModels)) {
+            const currentSelected = state.schedule.selectedModels;
+            selectedModels = currentSelected.filter(id => availableModels.some(model => model.id === id));
+        } else if (availableModels.length > 0) {
+            selectedModels = [availableModels[0].id];
         }
 
         // 隐藏测试中状态（如果收到新状态说明测试完成了）
@@ -1236,65 +1318,65 @@
         const accounts = auth?.accounts || [];
         const hasAccounts = accounts.length > 0;
         const activeAccount = auth?.activeAccount;
-        const activeEmail = activeAccount || auth?.email || '';
+        const activeEmail = activeAccount || auth?.email || (hasAccounts ? accounts[0].email : '');
+        const syncToggle = `
+            <label class="antigravityTools-sync-toggle">
+                <input type="checkbox" id="at-antigravityTools-sync-checkbox" ${antigravityToolsSyncEnabled ? 'checked' : ''}>
+                <span>${t('autoTrigger.antigravityToolsSync')}</span>
+            </label>
+        `;
+        const importBtn = `<button id="at-antigravityTools-import-btn" class="at-btn at-btn-secondary">${t('autoTrigger.importFromAntigravityTools')}</button>`;
 
         if (hasAccounts || auth?.isAuthorized) {
-            // 恢复原来的单行布局 + 下拿按钮
             const extraCount = Math.max(accounts.length - 1, 0);
             const accountCountBadge = extraCount > 0
                 ? `<span class="account-count-badge" title="${t('autoTrigger.manageAccounts')}">+${extraCount}</span>`
                 : '';
-            const dropdownArrow = accounts.length > 0
-                ? `<button id="at-account-dropdown-btn" class="quota-account-dropdown-btn" title="${t('autoTrigger.manageAccounts')}">▼</button>`
+            const manageBtn = accounts.length > 0
+                ? `<button id="at-account-manage-btn" class="quota-account-manage-btn" title="${t('autoTrigger.manageAccounts')}">${t('autoTrigger.manageAccounts')}</button>`
                 : '';
 
             authRow.innerHTML = `
-                <div class="at-auth-info at-auth-info-clickable" title="${t('autoTrigger.manageAccounts')}">
+                <div class="quota-auth-info quota-auth-info-clickable" title="${t('autoTrigger.manageAccounts')}">
                     <span class="at-auth-icon">✅</span>
                     <span class="at-auth-text">${t('autoTrigger.authorized')}</span>
-                    <span class="at-auth-email">${activeEmail}</span>
+                    <span class="quota-auth-email">${activeEmail}</span>
                     ${accountCountBadge}
-                    ${dropdownArrow}
+                    ${manageBtn}
                 </div>
-                <div class="at-auth-actions">
-                    <button id="at-reauth-btn" class="at-btn at-btn-secondary">${t('autoTrigger.reauthorizeBtn')}</button>
-                    <button id="at-revoke-btn" class="at-btn at-btn-danger">${t('autoTrigger.revokeBtn')}</button>
+                <div class="quota-auth-actions at-auth-actions">
+                    ${syncToggle}
+                    ${importBtn}
                 </div>
             `;
             statusGrid?.classList.remove('hidden');
             actions?.classList.remove('hidden');
 
-            // 绑定按钮事件
-            document.getElementById('at-reauth-btn')?.addEventListener('click', () => {
-                vscode.postMessage({ command: 'autoTrigger.authorize' });
-            });
-            document.getElementById('at-revoke-btn')?.addEventListener('click', () => {
-                openRevokeModal();
-            });
-
             // 点击授权信息区域打开账号管理弹框
-            authRow.querySelector('.at-auth-info')?.addEventListener('click', () => {
+            authRow.querySelector('.quota-auth-info')?.addEventListener('click', () => {
                 if (typeof window.openAccountManageModal === 'function') {
                     window.openAccountManageModal();
                 }
             });
 
-            // 绑定下拉按钮 - 调用 dashboard.js 的账号管理弹框
-            document.getElementById('at-account-dropdown-btn')?.addEventListener('click', () => {
-                // 调用 dashboard.js 中定义的 openAccountManageModal
+            // 管理账号按钮
+            document.getElementById('at-account-manage-btn')?.addEventListener('click', (e) => {
+                e.stopPropagation();
                 if (typeof window.openAccountManageModal === 'function') {
                     window.openAccountManageModal();
                 }
             });
-
+            attachAntigravityToolsSyncActions();
         } else {
             // No accounts - show authorize button
             authRow.innerHTML = `
-                <div class="at-auth-info">
+                <div class="quota-auth-info">
                     <span class="at-auth-icon">⚠️</span>
                     <span class="at-auth-text">${t('autoTrigger.unauthorized')}</span>
                 </div>
-                <div class="at-auth-actions">
+                <div class="quota-auth-actions at-auth-actions">
+                    ${syncToggle}
+                    ${importBtn}
                     <button id="at-auth-btn" class="at-btn at-btn-primary">${t('autoTrigger.authorizeBtn')}</button>
                 </div>
             `;
@@ -1304,6 +1386,7 @@
             document.getElementById('at-auth-btn')?.addEventListener('click', () => {
                 vscode.postMessage({ command: 'autoTrigger.authorize' });
             });
+            attachAntigravityToolsSyncActions();
         }
     }
 
@@ -1375,7 +1458,7 @@
         // 账号 - 显示所有选中账号
         const accountsValue = document.getElementById('at-accounts-value');
         if (accountsValue) {
-            const accountEmails = schedule.selectedAccounts || [];
+            const accountEmails = selectedAccounts;
             if (accountEmails.length === 0) {
                 accountsValue.textContent = '--';
             } else if (accountEmails.length === 1) {
@@ -1426,6 +1509,16 @@
         switch (message.type) {
             case 'autoTriggerState':
                 updateState(message.data);
+                break;
+            case 'telemetry_update':
+                if (message.config?.antigravityToolsSyncEnabled !== undefined) {
+                    setAntigravityToolsSyncEnabled(Boolean(message.config.antigravityToolsSyncEnabled));
+                }
+                break;
+            case 'antigravityToolsSyncStatus':
+                if (message.data?.enabled !== undefined) {
+                    setAntigravityToolsSyncEnabled(Boolean(message.data.enabled));
+                }
                 break;
         }
     });

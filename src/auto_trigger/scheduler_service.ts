@@ -6,6 +6,7 @@
 import { ScheduleConfig, ScheduleRepeatMode, DayOfWeek, CrontabParseResult } from './types';
 import { CronExpressionParser } from 'cron-parser';
 import { logger } from '../shared/log_service';
+import { t } from '../shared/i18n';
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647; // setTimeout 最大延迟约 24.8 天
 const LOCAL_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -207,43 +208,48 @@ class CronParser {
         dayOfWeek: string
     ): string {
         if (dayOfMonth !== '*' || month !== '*') {
-            return '自定义调度';
+            return t('autoTrigger.desc.custom');
         }
 
         if (minute.includes('/') || hour.includes('/') || dayOfWeek.includes('/')) {
-            return '自定义调度';
+            return t('autoTrigger.desc.custom');
         }
 
         const parts: string[] = [];
 
         // 时间描述
         if (minute === '0' && hour === '*') {
-            parts.push('每小时整点');
+            parts.push(t('autoTrigger.desc.hourly'));
         } else if (hour.includes(',')) {
             // 多个小时，相同分钟：如 "0 7,12,17 * * *" -> "每天 07:00, 12:00, 17:00"
             const hours = hour.split(',');
             const min = minute.padStart(2, '0');
             const timeList = hours.map(h => `${h.padStart(2, '0')}:${min}`).join(', ');
-            parts.push(`每天 ${timeList}`);
+            parts.push(t('autoTrigger.desc.dailyAt', { times: timeList }));
         } else if (hour !== '*' && minute !== '*') {
             // 单个时间点：如 "30 9 * * *" -> "每天 09:30"
-            parts.push(`每天 ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`);
+            const timeStr = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+            parts.push(t('autoTrigger.desc.dailyAt', { times: timeStr }));
         }
 
         // 星期描述
         if (dayOfWeek !== '*') {
-            const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+            const dayNames = [
+                t('common.weekday.sun'), t('common.weekday.mon'), t('common.weekday.tue'), 
+                t('common.weekday.wed'), t('common.weekday.thu'), t('common.weekday.fri'), 
+                t('common.weekday.sat')
+            ];
             if (dayOfWeek === '1-5') {
-                parts.push('工作日');
+                parts.push(t('autoTrigger.desc.workday'));
             } else if (dayOfWeek === '0,6' || dayOfWeek === '6,0') {
-                parts.push('周末');
+                parts.push(t('autoTrigger.desc.weekend'));
             } else {
                 const days = this.expandField(dayOfWeek, 0, 6).map(d => dayNames[d]);
                 parts.push(days.join(', '));
             }
         }
 
-        return parts.join(' ') || '自定义调度';
+        return parts.join(' ') || t('autoTrigger.desc.custom');
     }
 
     /**

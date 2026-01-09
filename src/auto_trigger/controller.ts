@@ -94,6 +94,7 @@ class AutoTriggerController {
             repeatMode: 'daily',
             dailyTimes: ['08:00'],
             selectedModels: ['gemini-3-flash'],
+            maxOutputTokens: 0,
         });
 
         const nextRunTime = schedulerService.getNextRunTime();
@@ -145,6 +146,7 @@ class AutoTriggerController {
             enabled: false,
             repeatMode: 'daily',
             selectedModels: ['gemini-3-flash'],
+            maxOutputTokens: 0,
         });
         schedule.enabled = false;
         await credentialStorage.saveState(SCHEDULE_CONFIG_KEY, schedule);
@@ -170,17 +172,45 @@ class AutoTriggerController {
     async removeAccount(email: string): Promise<void> {
         await oauthService.revokeAccount(email);
 
+        const schedule = credentialStorage.getState<ScheduleConfig>(SCHEDULE_CONFIG_KEY, {
+            enabled: false,
+            repeatMode: 'daily',
+            selectedModels: ['gemini-3-flash'],
+            maxOutputTokens: 0,
+        });
+        const remainingCredentials = await credentialStorage.getAllCredentials();
+        const remainingEmails = Object.keys(remainingCredentials);
+        const activeAccount = await credentialStorage.getActiveAccount();
+        let scheduleChanged = false;
+
+        if (Array.isArray(schedule.selectedAccounts)) {
+            const filtered = schedule.selectedAccounts.filter(account => remainingEmails.includes(account));
+            if (filtered.length !== schedule.selectedAccounts.length) {
+                schedule.selectedAccounts = filtered;
+                scheduleChanged = true;
+
+                // 如果勾选的账号被全部移除，自动关闭自动唤醒
+                if (filtered.length === 0 && schedule.enabled) {
+                    schedule.enabled = false;
+                    schedulerService.stop();
+                    this.stopFallbackScheduler();
+                    logger.info('[AutoTriggerController] All selected accounts removed, disabling schedule');
+                }
+            }
+        }
+
         // Check if there are remaining accounts
         const hasAuth = await credentialStorage.hasValidCredential();
         if (!hasAuth) {
             // No accounts left, stop scheduler and disable schedule
             schedulerService.stop();
-            const schedule = credentialStorage.getState<ScheduleConfig>(SCHEDULE_CONFIG_KEY, {
-                enabled: false,
-                repeatMode: 'daily',
-                selectedModels: ['gemini-3-flash'],
-            });
-            schedule.enabled = false;
+            if (schedule.enabled) {
+                schedule.enabled = false;
+                scheduleChanged = true;
+            }
+        }
+
+        if (scheduleChanged) {
             await credentialStorage.saveState(SCHEDULE_CONFIG_KEY, schedule);
         }
 
@@ -273,17 +303,18 @@ class AutoTriggerController {
             return [];
         }
 
-        const requested = (requestedAccounts || []).filter(email => email in allCredentials);
-        const candidates = requested.length > 0 ? requested : [];
-
-        if (candidates.length === 0) {
-            const active = await credentialStorage.getActiveAccount();
-            if (active && active in allCredentials) {
-                candidates.push(active);
-            }
+        // 如果明确传入了账号列表（包括空列表），则严格遵守该列表，不再走备用逻辑。
+        // 除非 requestedAccounts 为 undefined (表示从未配置过此项)。
+        if (Array.isArray(requestedAccounts)) {
+            return requestedAccounts.filter(email => (email in allCredentials) && Boolean(allCredentials[email]?.refreshToken));
         }
 
-        if (candidates.length === 0) {
+        // 备用逻辑：仅在配置缺失时使用。优先使用活跃账号，其次使用第一个可用账号。
+        const candidates: string[] = [];
+        const active = await credentialStorage.getActiveAccount();
+        if (active && (active in allCredentials)) {
+            candidates.push(active);
+        } else if (allEmails.length > 0) {
             candidates.push(allEmails[0]);
         }
 
@@ -301,14 +332,14 @@ class AutoTriggerController {
      * 手动触发一次
      * @param models 可选的自定义模型列表
      */
-    async testTrigger(models?: string[], accounts?: string[]): Promise<void> {
+    async testTrigger(models?: string[], accounts?: string[], maxOutputTokens?: number): Promise<void> {
         const targetAccounts = await this.resolveAccountsFromList(accounts);
         if (targetAccounts.length === 0) {
-            vscode.window.showErrorMessage('请先完成授权');
+            vscode.window.showErrorMessage(t('autoTrigger.authRequired'));
             return;
         }
 
-        vscode.window.showInformationMessage('⏳ 正在发送触发请求...');
+        vscode.window.showInformationMessage(t('autoTrigger.triggeringNotify'));
 
         // 如果传入了自定义模型列表，使用自定义的；否则使用配置中的
         let selectedModels = models;
@@ -317,16 +348,18 @@ class AutoTriggerController {
                 enabled: false,
                 repeatMode: 'daily',
                 selectedModels: ['gemini-3-flash'],
+                maxOutputTokens: 0,
             });
             selectedModels = schedule.selectedModels || ['gemini-3-flash'];
         }
+        const resolvedMaxOutputTokens = this.resolveMaxOutputTokens(maxOutputTokens);
 
         let anySuccess = false;
         let totalDuration = 0;
         let firstError: string | undefined;
 
         for (const email of targetAccounts) {
-            const result = await triggerService.trigger(selectedModels, 'manual', undefined, 'manual', email);
+            const result = await triggerService.trigger(selectedModels, 'manual', undefined, 'manual', email, resolvedMaxOutputTokens);
             totalDuration += result.duration || 0;
             if (result.success) {
                 anySuccess = true;
@@ -336,9 +369,9 @@ class AutoTriggerController {
         }
 
         if (anySuccess) {
-            vscode.window.showInformationMessage(`✅ 触发成功！耗时 ${totalDuration}ms`);
+            vscode.window.showInformationMessage(t('autoTrigger.testTriggerSuccess', { duration: totalDuration }));
         } else {
-            vscode.window.showErrorMessage(`❌ 触发失败: ${firstError || 'Unknown error'}`);
+            vscode.window.showErrorMessage(t('autoTrigger.testTriggerFailed', { error: firstError || t('common.unknownError') }));
         }
 
         // 通知 UI 更新
@@ -354,6 +387,7 @@ class AutoTriggerController {
         models?: string[],
         customPrompt?: string,
         accounts?: string[],
+        maxOutputTokens?: number,
     ): Promise<{ success: boolean; duration?: number; error?: string; response?: string }> {
         const targetAccounts = await this.resolveAccountsFromList(accounts);
         if (targetAccounts.length === 0) {
@@ -367,9 +401,11 @@ class AutoTriggerController {
                 enabled: false,
                 repeatMode: 'daily',
                 selectedModels: ['gemini-3-flash'],
+                maxOutputTokens: 0,
             });
             selectedModels = schedule.selectedModels || ['gemini-3-flash'];
         }
+        const resolvedMaxOutputTokens = this.resolveMaxOutputTokens(maxOutputTokens);
 
         let anySuccess = false;
         let totalDuration = 0;
@@ -377,7 +413,7 @@ class AutoTriggerController {
         let firstError: string | undefined;
 
         for (const email of targetAccounts) {
-            const result = await triggerService.trigger(selectedModels, 'manual', customPrompt, 'manual', email);
+            const result = await triggerService.trigger(selectedModels, 'manual', customPrompt, 'manual', email, resolvedMaxOutputTokens);
             totalDuration += result.duration || 0;
             if (result.success) {
                 anySuccess = true;
@@ -416,6 +452,7 @@ class AutoTriggerController {
             enabled: false,
             repeatMode: 'daily',
             selectedModels: ['gemini-3-flash'],
+            maxOutputTokens: 0,
         });
         const triggerSource = schedule.crontab ? 'crontab' : 'scheduled';
         const accounts = await this.resolveScheduleAccounts(schedule);
@@ -431,6 +468,7 @@ class AutoTriggerController {
                 schedule.customPrompt,
                 triggerSource,
                 email,
+                schedule.maxOutputTokens,
             );
 
             if (result.success) {
@@ -457,6 +495,7 @@ class AutoTriggerController {
             enabled: false,
             repeatMode: 'daily',
             selectedModels: ['gemini-3-flash'],
+            maxOutputTokens: 0,
         });
 
         logger.debug(`[AutoTriggerController] Schedule config: enabled=${schedule.enabled}, wakeOnReset=${schedule.wakeOnReset}, selectedModels=${JSON.stringify(schedule.selectedModels)}`);
@@ -537,7 +576,14 @@ class AutoTriggerController {
         // 触发唤醒
         logger.info(`[AutoTriggerController] Wake on reset: Triggering for models: ${modelsToTrigger.join(', ')}`);
         for (const email of accounts) {
-            const result = await triggerService.trigger(modelsToTrigger, 'auto', schedule.customPrompt, 'quota_reset', email);
+            const result = await triggerService.trigger(
+                modelsToTrigger,
+                'auto',
+                schedule.customPrompt,
+                'quota_reset',
+                email,
+                schedule.maxOutputTokens,
+            );
 
             if (result.success) {
                 logger.info(`[AutoTriggerController] Wake on reset: Trigger successful for ${email}`);
@@ -608,7 +654,7 @@ class AutoTriggerController {
         const tomorrow = new Date(now);
         tomorrow.setDate(tomorrow.getDate() + 1);
         if (nextRun.toDateString() === tomorrow.toDateString()) {
-            return `明天 ${nextRun.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+            return `${t('common.tomorrow')} ${nextRun.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
         }
 
         // 其他情况显示日期和时间
@@ -650,7 +696,11 @@ class AutoTriggerController {
                 break;
 
             case 'auto_trigger_test_trigger':
-                await this.testTrigger(message.data?.models, message.data?.accounts as string[] | undefined);
+                await this.testTrigger(
+                    message.data?.models,
+                    message.data?.accounts as string[] | undefined,
+                    message.data?.maxOutputTokens as number | undefined,
+                );
                 break;
 
             default:
@@ -811,6 +861,7 @@ class AutoTriggerController {
                 config.customPrompt,
                 'scheduled', // 标记为 scheduled 类型
                 email,
+                config.maxOutputTokens,
             );
 
             if (result.success) {
@@ -821,6 +872,22 @@ class AutoTriggerController {
         }
 
         this.notifyStateUpdate();
+    }
+
+    private resolveMaxOutputTokens(maxOutputTokens?: number): number {
+        if (typeof maxOutputTokens === 'number' && Number.isFinite(maxOutputTokens) && maxOutputTokens > 0) {
+            return Math.floor(maxOutputTokens);
+        }
+        const schedule = credentialStorage.getState<ScheduleConfig>(SCHEDULE_CONFIG_KEY, {
+            enabled: false,
+            repeatMode: 'daily',
+            selectedModels: ['gemini-3-flash'],
+            maxOutputTokens: 0,
+        });
+        // 0 means no limit, so return it directly
+        return typeof schedule.maxOutputTokens === 'number' && schedule.maxOutputTokens >= 0
+            ? Math.floor(schedule.maxOutputTokens)
+            : 0;
     }
 
     /**

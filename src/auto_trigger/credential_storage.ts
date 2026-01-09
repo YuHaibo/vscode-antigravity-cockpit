@@ -153,6 +153,7 @@ class CredentialStorage {
      * Get all credentials
      */
     async getAllCredentials(): Promise<Record<string, OAuthCredential>> {
+        await this.ensureMigrated();
         const storage = await this.getCredentialsStorage();
         return storage.accounts;
     }

@@ -284,7 +284,7 @@ export class QuickPickView {
 
                 // 计算具体重置时间
                 const resetTimeStr = model.resetTime 
-                    ? new Date(model.resetTime).toLocaleString('zh-CN', { 
+                    ? new Date(model.resetTime).toLocaleString(undefined, { 
                         year: 'numeric', 
                         month: '2-digit', 
                         day: '2-digit', 
@@ -357,7 +357,7 @@ export class QuickPickView {
                 // 计算具体重置时间（使用分组中第一个模型的重置时间）
                 const firstModel = group.models[0];
                 const resetTimeStr = firstModel?.resetTime 
-                    ? new Date(firstModel.resetTime).toLocaleString('zh-CN', { 
+                    ? new Date(firstModel.resetTime).toLocaleString(undefined, { 
                         year: 'numeric', 
                         month: '2-digit', 
                         day: '2-digit', 
@@ -561,7 +561,7 @@ export class QuickPickView {
                     const newMappings = ReactorCore.calculateGroupMappings(this.lastSnapshot.models);
                     await configService.updateGroupMappings(newMappings);
                     vscode.window.showInformationMessage(
-                        `${t('grouping.autoGroup')}: ${Object.keys(newMappings).length} ${t('grouping.models')}`,
+                        t('grouping.autoGroupApplied', { count: Object.keys(newMappings).length })
                     );
                     // 需要触发数据刷新以更新分组
                     if (this.refreshCallback) {

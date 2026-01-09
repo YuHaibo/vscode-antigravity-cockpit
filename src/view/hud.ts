@@ -217,6 +217,7 @@ export class CockpitHUD {
             dataMasked: config.dataMasked,
             groupMappings: config.groupMappings,
             language: config.language,
+            antigravityToolsSyncEnabled: configService.getStateFlag('antigravityToolsSyncEnabled', false),
         });
     }
 
@@ -241,6 +242,13 @@ export class CockpitHUD {
         if (this.panel) {
             this.panel.webview.postMessage(message);
         }
+    }
+
+    /**
+     * 检查 Webview 面板是否可见（用户当前正在查看）
+     */
+    public isVisible(): boolean {
+        return this.panel?.visible === true;
     }
 
     /**
@@ -450,10 +458,10 @@ export class CockpitHUD {
             <span>${t('dashboard.title')}</span>
         </div>
         <div class="controls">
-            <button id="refresh-btn" class="refresh-btn" title="Manual Refresh (10s Cooldown)">
+            <button id="refresh-btn" class="refresh-btn" title="${t('statusBarFormat.manualRefresh')}">
                 ${t('dashboard.refresh')}
             </button>
-            <button id="reset-order-btn" class="refresh-btn" title="Reset to default order">
+            <button id="reset-order-btn" class="refresh-btn" title="${t('statusBarFormat.resetOrderTooltip')}">
                 ${t('dashboard.resetOrder')}
             </button>
             <button id="manage-models-btn" class="refresh-btn" title="${t('models.manageTitle')}">
@@ -521,11 +529,16 @@ export class CockpitHUD {
             <div class="at-status-card" id="at-status-card">
                 <!-- Auth Row -->
                 <div class="at-row at-auth-row" id="at-auth-row">
-                    <div class="at-auth-info">
+                    <div class="quota-auth-info">
                         <span class="at-auth-icon">⚠️</span>
                         <span class="at-auth-text">${t('autoTrigger.unauthorized')}</span>
                     </div>
-                    <div class="at-auth-actions">
+                    <div class="quota-auth-actions at-auth-actions">
+                        <label class="antigravityTools-sync-toggle">
+                            <input type="checkbox" id="at-antigravityTools-sync-checkbox">
+                            <span>${t('autoTrigger.antigravityToolsSync')}</span>
+                        </label>
+                        <button id="at-antigravityTools-import-btn" class="at-btn at-btn-secondary">${t('autoTrigger.importFromAntigravityTools')}</button>
                         <button id="at-auth-btn" class="at-btn at-btn-primary">${t('autoTrigger.authorizeBtn')}</button>
                     </div>
                 </div>
@@ -533,19 +546,19 @@ export class CockpitHUD {
                 <!-- Status Grid (hidden when unauthorized) -->
                 <div class="at-status-grid" id="at-status-grid">
                     <div class="at-status-item">
-                        <span class="at-label">⏰ ${t('autoTrigger.statusLabel') || '状态'}</span>
-                        <span class="at-value" id="at-status-value">${t('autoTrigger.disabled') || '未启用'}</span>
+                        <span class="at-label">⏰ ${t('autoTrigger.statusLabel')}</span>
+                        <span class="at-value" id="at-status-value">${t('autoTrigger.disabled')}</span>
                     </div>
                     <div class="at-status-item">
-                        <span class="at-label">📅 ${t('autoTrigger.modeLabel') || '模式'}</span>
+                        <span class="at-label">📅 ${t('autoTrigger.modeLabel')}</span>
                         <span class="at-value" id="at-mode-value">--</span>
                     </div>
                     <div class="at-status-item">
-                        <span class="at-label">🤖 ${t('autoTrigger.modelsLabel') || '模型'}</span>
+                        <span class="at-label">🤖 ${t('autoTrigger.modelsLabel')}</span>
                         <span class="at-value" id="at-models-value">--</span>
                     </div>
                     <div class="at-status-item">
-                        <span class="at-label">👤 ${t('autoTrigger.accountsLabel') || '账号'}</span>
+                        <span class="at-label">👤 ${t('autoTrigger.accountsLabel')}</span>
                         <span class="at-value" id="at-accounts-value">--</span>
                     </div>
                     <div class="at-status-item">
@@ -557,13 +570,13 @@ export class CockpitHUD {
                 <!-- Action Buttons -->
                 <div class="at-actions" id="at-actions">
                     <button id="at-config-btn" class="at-btn at-btn-secondary">
-                        ⚙️ ${t('autoTrigger.configBtn') || '配置调度'}
+                        ⚙️ ${t('autoTrigger.configBtn')}
                     </button>
                     <button id="at-test-btn" class="at-btn at-btn-accent">
                         ${t('autoTrigger.testBtn')}
                     </button>
                     <button id="at-history-btn" class="at-btn at-btn-secondary">
-                        📜 ${t('autoTrigger.historyBtn') || '历史'} <span id="at-history-count">(0)</span>
+                        📜 ${t('autoTrigger.historyBtn')} <span id="at-history-count">(0)</span>
                     </button>
                 </div>
             </div>
@@ -595,6 +608,12 @@ export class CockpitHUD {
                         <p class="at-hint">${t('autoTrigger.customPromptHint')}</p>
                     </div>
 
+                    <div class="at-config-section">
+                        <label>${t('autoTrigger.maxOutputTokensLabel')}</label>
+                        <input type="number" id="at-max-output-tokens" min="1" class="at-input-small">
+                        <p class="at-hint">${t('autoTrigger.maxOutputTokensHint')}</p>
+                    </div>
+
                     <!-- Trigger Mode Selection -->
                     <div class="at-config-section at-trigger-mode-section">
                         <label>${t('autoTrigger.triggerMode')}</label>
@@ -617,8 +636,8 @@ export class CockpitHUD {
 
                     <!-- Account Selection (shared by all modes) -->
                     <div class="at-config-section">
-                        <label>${t('autoTrigger.accountSection') || '账号选择'}</label>
-                        <p class="at-hint">${t('autoTrigger.accountHint') || '可多选，自动唤醒将依次使用这些账号'}</p>
+                        <label>${t('autoTrigger.accountSection')}</label>
+                        <p class="at-hint">${t('autoTrigger.accountHint')}</p>
                         <div id="at-config-accounts" class="at-model-list">
                             <div class="at-loading">${t('dashboard.connecting')}</div>
                         </div>
@@ -650,13 +669,13 @@ export class CockpitHUD {
                         <div id="at-config-weekly" class="at-mode-config hidden">
                             <label>${t('autoTrigger.selectDay')}</label>
                             <div class="at-day-grid" id="at-weekly-days">
-                                <div class="at-chip selected" data-day="1">一</div>
-                                <div class="at-chip selected" data-day="2">二</div>
-                                <div class="at-chip selected" data-day="3">三</div>
-                                <div class="at-chip selected" data-day="4">四</div>
-                                <div class="at-chip selected" data-day="5">五</div>
-                                <div class="at-chip" data-day="6">六</div>
-                                <div class="at-chip" data-day="0">日</div>
+                                <div class="at-chip selected" data-day="1">${t('common.weekday.mon.short')}</div>
+                                <div class="at-chip selected" data-day="2">${t('common.weekday.tue.short')}</div>
+                                <div class="at-chip selected" data-day="3">${t('common.weekday.wed.short')}</div>
+                                <div class="at-chip selected" data-day="4">${t('common.weekday.thu.short')}</div>
+                                <div class="at-chip selected" data-day="5">${t('common.weekday.fri.short')}</div>
+                                <div class="at-chip" data-day="6">${t('common.weekday.sat.short')}</div>
+                                <div class="at-chip" data-day="0">${t('common.weekday.sun.short')}</div>
                             </div>
                             <div class="at-quick-btns">
                                 <button class="at-quick-btn" data-preset="workdays">${t('autoTrigger.workdays')}</button>
@@ -756,7 +775,7 @@ export class CockpitHUD {
                 </div>
             </div>
             <div class="modal-footer">
-                <button id="at-config-cancel" class="btn-secondary">${t('customGrouping.cancel') || '取消'}</button>
+                <button id="at-config-cancel" class="btn-secondary">${t('common.cancel')}</button>
                 <button id="at-config-save" class="btn-primary">💾 ${t('autoTrigger.saveBtn')}</button>
             </div>
         </div>
@@ -775,8 +794,8 @@ export class CockpitHUD {
                     <div class="at-loading">${t('dashboard.connecting')}</div>
                 </div>
 
-                <label>${t('autoTrigger.testAccountSection') || '测试账号'}</label>
-                <p class="at-hint">${t('autoTrigger.testAccountHint') || '可多选，用这些账号进行测试'}</p>
+                <label>${t('autoTrigger.testAccountSection')}</label>
+                <p class="at-hint">${t('autoTrigger.testAccountHint')}</p>
                 <div id="at-test-accounts" class="at-model-list">
                     <div class="at-loading">${t('dashboard.connecting')}</div>
                 </div>
@@ -786,10 +805,15 @@ export class CockpitHUD {
                     <label>${t('autoTrigger.customPrompt')}</label>
                     <input type="text" id="at-test-custom-prompt" placeholder="${t('autoTrigger.customPromptPlaceholder')}" class="at-input" maxlength="100">
                 </div>
+                <div class="at-config-section at-test-prompt-section">
+                    <label>${t('autoTrigger.maxOutputTokensLabel')}</label>
+                    <input type="number" id="at-test-max-output-tokens" min="1" class="at-input-small">
+                    <p class="at-hint">${t('autoTrigger.maxOutputTokensHint')}</p>
+                </div>
             </div>
             <div class="modal-footer">
-                <button id="at-test-cancel" class="btn-secondary">${t('customGrouping.cancel') || '取消'}</button>
-                <button id="at-test-run" class="btn-primary">🚀 ${t('autoTrigger.triggerBtn') || '触发'}</button>
+                <button id="at-test-cancel" class="btn-secondary">${t('common.cancel')}</button>
+                <button id="at-test-run" class="btn-primary">🚀 ${t('autoTrigger.triggerBtn')}</button>
             </div>
         </div>
     </div>
@@ -816,15 +840,15 @@ export class CockpitHUD {
     <div id="at-revoke-modal" class="modal hidden">
         <div class="modal-content modal-content-small">
             <div class="modal-header">
-                <h3>⚠️ ${t('autoTrigger.revokeConfirmTitle') || '确认取消授权'}</h3>
+                <h3>⚠️ ${t('autoTrigger.revokeConfirmTitle')}</h3>
                 <button id="at-revoke-close" class="close-btn">×</button>
             </div>
             <div class="modal-body" style="text-align: center; padding: 20px;">
                 <p style="margin-bottom: 20px;">${t('autoTrigger.revokeConfirm')}</p>
             </div>
             <div class="modal-footer">
-                <button id="at-revoke-cancel" class="btn-secondary">${t('customGrouping.cancel') || '取消'}</button>
-                <button id="at-revoke-confirm" class="btn-primary" style="background: var(--vscode-errorForeground);">🗑️ ${t('autoTrigger.confirmRevoke') || '确认取消'}</button>
+                <button id="at-revoke-cancel" class="btn-secondary">${t('common.cancel')}</button>
+                <button id="at-revoke-confirm" class="btn-primary" style="background: var(--vscode-errorForeground);">🗑️ ${t('autoTrigger.confirmRevoke')}</button>
             </div>
         </div>
     </div>
@@ -849,7 +873,7 @@ export class CockpitHUD {
                 <div id="model-manager-list" class="model-manager-list"></div>
             </div>
             <div class="modal-footer">
-                <button id="model-manager-cancel" class="btn-secondary">${t('customGrouping.cancel') || '取消'}</button>
+                <button id="model-manager-cancel" class="btn-secondary">${t('common.cancel')}</button>
                 <button id="model-manager-save" class="btn-primary">${t('models.save')}</button>
             </div>
         </div>
