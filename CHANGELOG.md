@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.35]
+
+### Changed
+- **Model Management**: Unified model management logic for local and authorized sources, ensuring a consistent experience across different quota origins.
+- **Model Management**: Local mode now supports automatic sorting (weighted by recommended rank) and default selection of recommended models.
+- **UI**: The "Select Recommended" button in the model manager is now always available regardless of the quota source.
+
 ## [1.8.34]
 
 ### Changed

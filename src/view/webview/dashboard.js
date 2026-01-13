@@ -1686,11 +1686,11 @@
         if (!recommendedBtn) {
             return;
         }
-        const isAuthorized = currentQuotaSource === 'authorized';
-        recommendedBtn.classList.toggle('hidden', !isAuthorized);
+        // Always show recommended button for both local and authorized
+        recommendedBtn.classList.remove('hidden');
     }
 
-    function getAuthorizedRecommendedRank(model) {
+    function getRecommendedRank(model) {
         const label = model?.label || '';
         const modelId = model?.modelId || '';
         if (AUTH_RECOMMENDED_ID_RANK.has(modelId)) {
@@ -1707,10 +1707,10 @@
         );
     }
 
-    function getAuthorizedRecommendedIds(models) {
+    function getRecommendedIds(models) {
         return models
-            .filter(model => getAuthorizedRecommendedRank(model) < Number.MAX_SAFE_INTEGER)
-            .sort((a, b) => getAuthorizedRecommendedRank(a) - getAuthorizedRecommendedRank(b))
+            .filter(model => getRecommendedRank(model) < Number.MAX_SAFE_INTEGER)
+            .sort((a, b) => getRecommendedRank(a) - getRecommendedRank(b))
             .map(model => model.modelId);
     }
 
@@ -1733,17 +1733,15 @@
     function getModelManagerModels() {
         const models = lastSnapshot?.allModels || lastSnapshot?.models || [];
         const sorted = [...models];
-        if (currentQuotaSource === 'authorized') {
-            return sorted.sort((a, b) => {
-                const aRank = getAuthorizedRecommendedRank(a);
-                const bRank = getAuthorizedRecommendedRank(b);
-                if (aRank !== bRank) {
-                    return aRank - bRank;
-                }
-                return (a.label || '').localeCompare(b.label || '');
-            });
-        }
-        return sorted.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+        // Use recommended rank for sorting for both local and authorized
+        return sorted.sort((a, b) => {
+            const aRank = getRecommendedRank(a);
+            const bRank = getRecommendedRank(b);
+            if (aRank !== bRank) {
+                return aRank - bRank;
+            }
+            return (a.label || '').localeCompare(b.label || '');
+        });
     }
 
     function getDefaultVisibleModelIds(models) {
@@ -1751,11 +1749,10 @@
         if (Array.isArray(visibleModelIds) && visibleModelIds.length > 0) {
             return visibleModelIds.filter(id => allIds.includes(id));
         }
-        if (currentQuotaSource === 'authorized') {
-            const recommendedIds = getAuthorizedRecommendedIds(models).filter(id => allIds.includes(id));
-            if (recommendedIds.length > 0) {
-                return recommendedIds;
-            }
+        // Use recommended IDs for default selection for both local and authorized
+        const recommendedIds = getRecommendedIds(models).filter(id => allIds.includes(id));
+        if (recommendedIds.length > 0) {
+            return recommendedIds;
         }
         return allIds;
     }
@@ -1802,10 +1799,7 @@
         if (mode === 'all') {
             modelManagerSelection = new Set(modelManagerModels.map(model => model.modelId));
         } else if (mode === 'recommended') {
-            if (currentQuotaSource !== 'authorized') {
-                return;
-            }
-            modelManagerSelection = new Set(getAuthorizedRecommendedIds(modelManagerModels));
+            modelManagerSelection = new Set(getRecommendedIds(modelManagerModels));
         } else {
             modelManagerSelection = new Set();
         }
