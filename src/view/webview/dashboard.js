@@ -194,9 +194,6 @@
         document.getElementById('model-manager-clear')?.addEventListener('click', () => {
             updateModelManagerSelection('none');
         });
-        document.getElementById('model-manager-select-recommended')?.addEventListener('click', () => {
-            updateModelManagerSelection('recommended');
-        });
 
         // 重置名称按钮
         const resetNameBtn = document.getElementById('reset-name-btn');
@@ -1681,15 +1678,6 @@
         });
     }
 
-    function updateModelManagerToolbar() {
-        const recommendedBtn = document.getElementById('model-manager-select-recommended');
-        if (!recommendedBtn) {
-            return;
-        }
-        // Always show recommended button for both local and authorized
-        recommendedBtn.classList.remove('hidden');
-    }
-
     function getRecommendedRank(model) {
         const label = model?.label || '';
         const modelId = model?.modelId || '';
@@ -1722,7 +1710,6 @@
         modelManagerModels = getModelManagerModels();
         modelManagerSelection = new Set(getDefaultVisibleModelIds(modelManagerModels));
         renderModelManagerList();
-        updateModelManagerToolbar();
         modelManagerModal.classList.remove('hidden');
     }
 
@@ -1732,9 +1719,10 @@
 
     function getModelManagerModels() {
         const models = lastSnapshot?.allModels || lastSnapshot?.models || [];
-        const sorted = [...models];
-        // Use recommended rank for sorting for both local and authorized
-        return sorted.sort((a, b) => {
+        // Only include recommended models
+        const recommendedModels = models.filter(model => getRecommendedRank(model) < Number.MAX_SAFE_INTEGER);
+        // Use recommended rank for sorting
+        return recommendedModels.sort((a, b) => {
             const aRank = getRecommendedRank(a);
             const bRank = getRecommendedRank(b);
             if (aRank !== bRank) {

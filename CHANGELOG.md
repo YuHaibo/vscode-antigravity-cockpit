@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.37]
+
+### Changed
+- **Model Management**: The model manager and quota display now show only recommended models, filtering out non-recommended models (e.g., `chat_*`, `Gemini 2.5 Flash`).
+- **UI Cleanup**: Removed the "Select Recommended" button from the model manager toolbar as it's no longer needed.
+- **Announcements**: Added scrolling support for announcement popup content when content is too long.
+
 ## [1.8.36]
 
 ### Fixed

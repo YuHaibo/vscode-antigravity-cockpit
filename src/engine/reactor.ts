@@ -1020,6 +1020,10 @@ export class ReactorCore {
     ): QuotaSnapshot {
         const config = configService.getConfig();
         const allModels = [...models];
+
+        // 首先过滤只保留推荐模型
+        models = models.filter(model => this.getAuthorizedRecommendedRank(model) < Number.MAX_SAFE_INTEGER);
+
         const visibleModels = config.visibleModels ?? [];
         if (visibleModels.length > 0) {
             const visibleSet = new Set(visibleModels);
@@ -1029,8 +1033,8 @@ export class ReactorCore {
             if (filteredModels.length === 0 && models.length > 0) {
                 logger.warn(`[buildSnapshot] Visible models filter resulted in empty list. ` +
                     `Original: ${models.length}, Visible config: ${visibleModels.length}. ` +
-                    `Showing all models instead.`);
-                // 不应用过滤，保留原始列表
+                    `Showing all recommended models instead.`);
+                // 不应用 visibleModels 过滤，但保留推荐模型过滤
             } else {
                 models = filteredModels;
             }

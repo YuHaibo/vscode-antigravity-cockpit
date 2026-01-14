@@ -2904,6 +2904,8 @@ input:checked+.slider:before {
 
 .announcement-popup-body {
     padding: 20px 24px;
+    max-height: 50vh;
+    overflow-y: auto;
 }
 
 .announcement-content {

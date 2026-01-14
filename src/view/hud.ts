@@ -861,7 +861,6 @@ export class CockpitHUD {
                 <div class="model-manager-toolbar">
                     <button id="model-manager-select-all" class="btn-secondary">${t('models.selectAll')}</button>
                     <button id="model-manager-clear" class="btn-secondary">${t('models.clearAll')}</button>
-                    <button id="model-manager-select-recommended" class="btn-secondary hidden">${t('models.selectRecommended')}</button>
                     <span id="model-manager-count" class="model-manager-count"></span>
                 </div>
                 <div id="model-manager-list" class="model-manager-list"></div>
