@@ -227,6 +227,15 @@ npm run package
 
 ---
 
+## 致谢
+
+- 本项目最初的进程检测逻辑参考了 [Antigravity Quota](https://github.com/Henrik-3/AntigravityQuota)。
+- [Antigravity Quota](https://github.com/Henrik-3/AntigravityQuota) 的进程检测逻辑源自 [AntigravityQuotaWatcher](https://github.com/wusimpl/AntigravityQuotaWatcher)。
+
+感谢以上项目作者的开源贡献！如果这些项目对你有帮助，也请给他们点个 ⭐ Star 支持一下！
+
+---
+
 ## 支持
 
 - ⭐ [GitHub Star](https://github.com/jlcodes99/vscode-antigravity-cockpit)
