@@ -163,11 +163,18 @@ class ConfigService {
             const stateKey = this.buildStateKey(configKey);
             const stored = this.globalState.get<T>(stateKey);
             if (stored !== undefined) {
+                if (configKey === CONFIG_KEYS.QUOTA_SOURCE) {
+                    logger.debug(`[ConfigService] getStateValue: ${configKey} = ${JSON.stringify(stored)} (from globalState)`);
+                }
                 return stored;
             }
         }
         const config = vscode.workspace.getConfiguration(this.configSection);
-        return config.get<T>(configKey as keyof CockpitConfig, fallbackValue);
+        const fallback = config.get<T>(configKey as keyof CockpitConfig, fallbackValue);
+        if (configKey === CONFIG_KEYS.QUOTA_SOURCE) {
+            logger.debug(`[ConfigService] getStateValue: ${configKey} = ${JSON.stringify(fallback)} (from config fallback)`);
+        }
+        return fallback;
     }
 
     private isStateKey(key: keyof CockpitConfig): boolean {

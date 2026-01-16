@@ -145,7 +145,7 @@ export class AntigravityToolsSyncService {
             const indexJson = JSON.parse(indexRaw) as { current_account_id?: string; accounts?: { id: string }[] };
             const currentId = indexJson.current_account_id;
             const ids = (indexJson.accounts || []).map(acc => acc.id);
-            if (!currentId || ids.length === 0) return null;
+            if (!currentId || ids.length === 0) {return null;}
 
             // 性能优化：使用 Promise.all 并发读取所有账号文件
             const accountPromises = ids.map(async id => {
@@ -160,7 +160,7 @@ export class AntigravityToolsSyncService {
                     const email = accountJson.token?.email || accountJson.email;
                     const refreshToken = accountJson.token?.refresh_token;
 
-                    if (!email || !refreshToken) return null;
+                    if (!email || !refreshToken) {return null;}
                     return { id, email, refreshToken };
                 } catch (e) {
                     return null;

@@ -272,6 +272,7 @@ function handleOfflineState(): void {
         refreshInterval: 120,
         notificationEnabled: false,
         language: configService.getConfig().language,
+        quotaSource: 'local', // 必须传递 quotaSource，否则前端切换逻辑无法完成
     });
 }
 

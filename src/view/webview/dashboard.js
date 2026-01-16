@@ -637,10 +637,7 @@
         showToast(i18n['dashboard.resetOrder'] || 'Reset Order', 'success');
     }
 
-    function handleAutoGroup() {
-        vscode.postMessage({ command: 'autoGroup' });
-        showToast(i18n['grouping.autoGroup'] || 'Auto grouping...', 'info');
-    }
+    // handleAutoGroup 已移除，功能已整合到其他模块
 
 
 
@@ -815,7 +812,9 @@
         vscode.postMessage({ command, quotaSource: source });
     }
 
-    function attachAntigravityToolsSyncActions() {
+    // attachAntigravityToolsSyncActions 保留但需要在某处调用
+    // 当前由 authUi 模块处理，此函数作为兼容备用
+    function _attachAntigravityToolsSyncActions() {
         const checkbox = document.getElementById('antigravityTools-sync-checkbox');
         const importBtn = document.getElementById('antigravityTools-import-btn');
 
@@ -1348,7 +1347,7 @@
     /**
      * 处理导入完成消息
      */
-    function handleAntigravityToolsSyncComplete(success, error) {
+    function handleAntigravityToolsSyncComplete(_success, _error) {
         const modal = document.getElementById('antigravityTools-sync-modal');
         if (modal) {
             modal.classList.add('hidden');
@@ -1373,7 +1372,6 @@
 
         updateQuotaAuthUI();
         updateQuotaSourceInfo();
-        updateModelManagerToolbar();
     }
 
     function updateQuotaAuthUI() {
@@ -1389,13 +1387,21 @@
             if (localEmail) {
                 // 使用远端 API + 本地账户
                 card.classList.remove('hidden');
+                // 切换至当前登录账户按钮
+                const switchToClientBtn = `<button class="quota-account-manage-btn at-switch-to-client-btn-local" title="${i18n['autoTrigger.switchToClientAccount'] || '切换至当前登录账户'}">${i18n['autoTrigger.switchToClientAccount'] || '切换至当前登录账户'}</button>`;
                 row.innerHTML = `
                     <div class="quota-auth-info">
                         <span class="quota-auth-icon">👤</span>
                         <span class="quota-auth-text">${i18n['quotaSource.localAccountLabel'] || '当前账户'}</span>
                         <span class="quota-auth-email">${localEmail}</span>
+                        ${switchToClientBtn}
                     </div>
                 `;
+                // 绑定切换按钮事件
+                row.querySelector('.at-switch-to-client-btn-local')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    vscode.postMessage({ command: 'antigravityToolsSync.switchToClient' });
+                });
             } else {
                 // 使用本地进程 API
                 card.classList.add('hidden');
@@ -1422,7 +1428,7 @@
 
         if (hasAccounts && activeEmail) {
             // 保持原有的单行布局，增加下拉箭头用于管理多账号
-            const hasMultipleAccounts = accounts.length > 1;
+            const _hasMultipleAccounts = accounts.length > 1;
             const extraCount = Math.max(accounts.length - 1, 0);
             const accountCountBadge = extraCount > 0
                 ? `<span class="account-count-badge" title="${i18n['autoTrigger.manageAccounts'] || 'Manage Accounts'}">+${extraCount}</span>`
@@ -2671,7 +2677,7 @@
         // 转换为分组结构
         customGroupingState.groups = [];
         let groupIndex = 1;
-        for (const [signature, modelIds] of signatureMap) {
+        for (const [_signature, modelIds] of signatureMap) {
             // 使用排序后的副本生成稳定的 groupId，保持 modelIds 原始顺序
             const groupId = [...modelIds].sort().join('_');
 
@@ -3101,7 +3107,7 @@
         // 绑定 pin 开关事件
         const pinToggle = card.querySelector('.group-pin-toggle');
         if (pinToggle) {
-            pinToggle.addEventListener('change', (e) => {
+            pinToggle.addEventListener('change', (_e) => {
                 vscode.postMessage({
                     command: 'toggleGroupPin',
                     groupId: group.groupId

@@ -471,7 +471,7 @@ export const zhCN = {
     'antigravityToolsSync.switchTitle': 'Antigravity Tools 账户不一致',
     'antigravityToolsSync.localAccount': '当前账户',
     'antigravityToolsSync.switchBtn': '切换到此账户',
-    'antigravityToolsSync.alreadySynced': '账号已是最新，已与 Antigravity Tools 同步。',
+    'antigravityToolsSync.alreadySynced': '已经当前登录账户，无需切换',
     'antigravityToolsSync.autoImported': '已自动同步账户: {email}',
     'antigravityToolsSync.imported': '已导入账号',
     'antigravityToolsSync.switched': '已切换到 {email}',

@@ -327,6 +327,7 @@ export class CloudCodeClient {
             let gotEvent = false;
 
             try {
+                // eslint-disable-next-line no-constant-condition
                 while (true) {
                     const { value, done } = await reader.read();
                     if (done) {

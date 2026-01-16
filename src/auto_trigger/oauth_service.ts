@@ -75,7 +75,7 @@ class OAuthService {
             // 5. 显示等待提示
             vscode.window.showInformationMessage(
                 t('oauth.waiting'),
-                t('common.cancel')
+                t('common.cancel'),
             ).then(selection => {
                 if (selection === t('common.cancel')) {
                     this.cancelPendingAuth();

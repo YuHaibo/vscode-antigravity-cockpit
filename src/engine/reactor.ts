@@ -1031,9 +1031,9 @@ export class ReactorCore {
             
             // 安全检查：如果过滤后为空但原始列表不为空，可能是配置问题
             if (filteredModels.length === 0 && models.length > 0) {
-                logger.warn(`[buildSnapshot] Visible models filter resulted in empty list. ` +
+                logger.warn('[buildSnapshot] Visible models filter resulted in empty list. ' +
                     `Original: ${models.length}, Visible config: ${visibleModels.length}. ` +
-                    `Showing all recommended models instead.`);
+                    'Showing all recommended models instead.');
                 // 不应用 visibleModels 过滤，但保留推荐模型过滤
             } else {
                 models = filteredModels;

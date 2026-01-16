@@ -456,7 +456,7 @@ export const ja = {
     'antigravityToolsSync.switchTitle': 'Antigravity Tools アカウントの不一致',
     'antigravityToolsSync.localAccount': '現在の設定アカウント',
     'antigravityToolsSync.switchBtn': 'このアカウントに切り替える',
-    'antigravityToolsSync.alreadySynced': 'アカウントは既に Antigravity Tools と同期されており、最新です。',
+    'antigravityToolsSync.alreadySynced': '既に現在のログインアカウントです。切り替えは不要です。',
     'antigravityToolsSync.autoImported': 'アカウントを自動同期しました: {email}',
     'autoTrigger.antigravityToolsSyncTarget': 'Antigravity Tools 現在のアカウント',
     'autoTrigger.antigravityToolsSyncTitle': 'Antigravity Tools アカウント同期',

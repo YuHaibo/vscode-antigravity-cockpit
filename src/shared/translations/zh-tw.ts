@@ -459,7 +459,7 @@ export const zhTW = {
     'antigravityToolsSync.switchTitle': 'Antigravity Tools 帳戶不一致',
     'antigravityToolsSync.localAccount': '目前帳戶',
     'antigravityToolsSync.switchBtn': '切換到此帳戶',
-    'antigravityToolsSync.alreadySynced': '帳號已是最新，已與 Antigravity Tools 同步。',
+    'antigravityToolsSync.alreadySynced': '已經當前登錄帳戶，無需切換',
     'antigravityToolsSync.autoImported': '已自動同步帳戶: {email}',
     'autoTrigger.antigravityToolsSyncTarget': 'Antigravity Tools 當前帳戶',
     'autoTrigger.antigravityToolsSyncTitle': 'Antigravity Tools 帳戶同步',

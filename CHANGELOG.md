@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.38]
+
+### Fixed
+- **UI Consistency**: Fixed a script error in the Dashboard where switching quota sources would freeze the UI due to a missing function call.
+- **Offline Sync**: Fixed a state synchronization issue where the correct quota source wasn't displayed in the frontend when the extension was offline.
+
+### Changed
+- **Account Switching**: Significant logic rewrite for account switching. The extension now prioritizes detecting the active account in the local Antigravity client (`state.vscdb`) over Antigravity Tools, with robust fallbacks.
+- **Account Switching**: Quota data is now immediately refreshed after switching accounts in all modes (authorized/local).
+- **Account Switching**: Improved the "Switch to Current Login" button logic to cross-detect accounts from multiple local sources.
+
+### Engineering
+- **Linting**: Enabled ESLint for all webview JavaScript files. Fixed dozens of "variable defined but never used" warnings and potential runtime errors.
+- **Build**: Integrated ESLint into the build process; `npm run compile` now automatically performs code quality checks before building.
+
+### i18n
+- **Wording**: Updated the `alreadySynced` message across all 15 supported languages (e.g., "Already using this account, no switch needed") to be more accurate as it now covers multiple account sources.
+
 ## [1.8.37]
 
 ### Changed

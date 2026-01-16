@@ -37,8 +37,11 @@ export class MessageController {
             this.reactor.cancelInitRetry();
         }
 
-        logger.info(`User changed quota source to: ${source}`);
+        logger.info(`User changed quota source: ${previousSource} -> ${source}`);
         await configService.updateConfig('quotaSource', source);
+        // 验证保存是否成功
+        const savedSource = configService.getConfig().quotaSource;
+        logger.info(`QuotaSource saved: requested=${source}, actual=${savedSource}`);
 
         // 发送 loading 状态提示
         this.hud.sendMessage({
@@ -410,7 +413,7 @@ export class MessageController {
                             }
                             vscode.window.showInformationMessage(
                                 t('autoTrigger.accountSwitched', { email: targetEmail }) 
-                                || `已切换至账号: ${targetEmail}`
+                                || `已切换至账号: ${targetEmail}`,
                             );
                         } else {
                             // 需要导入的场景
@@ -616,14 +619,16 @@ export class MessageController {
                     break;
 
                 case 'autoTrigger.clearHistory':
-                    logger.info('User cleared trigger history');
-                    await autoTriggerController.clearHistory();
-                    const state = await autoTriggerController.getState();
-                    this.hud.sendMessage({
-                        type: 'autoTriggerState',
-                        data: state,
-                    });
-                    vscode.window.showInformationMessage(t('autoTrigger.historyCleared'));
+                    {
+                        logger.info('User cleared trigger history');
+                        await autoTriggerController.clearHistory();
+                        const state = await autoTriggerController.getState();
+                        this.hud.sendMessage({
+                            type: 'autoTriggerState',
+                            data: state,
+                        });
+                        vscode.window.showInformationMessage(t('autoTrigger.historyCleared'));
+                    }
                     break;
 
                 case 'autoTrigger.getState':
@@ -888,7 +893,7 @@ export class MessageController {
                             await this.performAntigravityToolsImport(activeEmail, true, !autoSwitchEnabled);
                             vscode.window.showInformationMessage(
                                 t('antigravityToolsSync.autoImported', { email: detection.currentEmail }) 
-                                || `已自动同步账户: ${detection.currentEmail}`
+                                || `已自动同步账户: ${detection.currentEmail}`,
                             );
                         }
                         return;
@@ -1008,30 +1013,51 @@ export class MessageController {
 
     /**
      * 切换至当前登录账户
-     * 检测 Antigravity Tools 或本地客户端的当前账户：
+     * 优先检测本地 Antigravity 客户端的当前账户，其次检测 Antigravity Tools：
      * - 如果账户已存在于 Cockpit，直接切换
      * - 如果账户不存在，走导入弹框流程
      */
     private async handleSwitchToClientAccount(): Promise<void> {
         try {
-            const detection = await antigravityToolsSyncService.detect();
+            let currentEmail: string | null = null;
+            let source: 'local' | 'tools' = 'local';
             
-            if (!detection || !detection.currentEmail) {
-                // 未检测到客户端账户
+            // 优先从本地 Antigravity 客户端读取当前账户
+            try {
+                const preview = await previewLocalCredential();
+                if (preview?.email) {
+                    currentEmail = preview.email;
+                    source = 'local';
+                    logger.info(`[SwitchToClient] Found local client account: ${currentEmail}`);
+                }
+            } catch (localErr) {
+                logger.debug(`[SwitchToClient] Local client detection failed: ${localErr instanceof Error ? localErr.message : localErr}`);
+            }
+            
+            // 如果本地客户端没有，尝试 Antigravity Tools
+            if (!currentEmail) {
+                const detection = await antigravityToolsSyncService.detect();
+                if (detection?.currentEmail) {
+                    currentEmail = detection.currentEmail;
+                    source = 'tools';
+                    logger.info(`[SwitchToClient] Found Antigravity Tools account: ${currentEmail}`);
+                }
+            }
+            
+            if (!currentEmail) {
                 vscode.window.showWarningMessage(
-                    t('antigravityToolsSync.noClientAccount') || '未检测到客户端登录账户'
+                    t('antigravityToolsSync.noClientAccount') || '未检测到客户端登录账户',
                 );
                 return;
             }
 
             const activeEmail = await credentialStorage.getActiveAccount();
-            const currentEmail = detection.currentEmail;
             const currentEmailLower = currentEmail.toLowerCase();
             
             // 检查是否已是当前账户
             if (activeEmail && activeEmail.toLowerCase() === currentEmailLower) {
                 vscode.window.showInformationMessage(
-                    t('antigravityToolsSync.alreadySynced') || '已是当前账户'
+                    t('antigravityToolsSync.alreadySynced') || '已是当前账户',
                 );
                 return;
             }
@@ -1039,7 +1065,7 @@ export class MessageController {
             // 检查账户是否已存在于 Cockpit
             const accounts = await credentialStorage.getAllCredentials();
             const existingEmail = Object.keys(accounts).find(
-                email => email.toLowerCase() === currentEmailLower
+                email => email.toLowerCase() === currentEmailLower,
             );
 
             if (existingEmail) {
@@ -1049,23 +1075,23 @@ export class MessageController {
                 const state = await autoTriggerController.getState();
                 this.hud.sendMessage({ type: 'autoTriggerState', data: state });
                 
-                if (configService.getConfig().quotaSource === 'authorized') {
-                    this.reactor.syncTelemetry();
-                }
+                // 刷新配额
+                this.reactor.syncTelemetry();
                 
                 vscode.window.showInformationMessage(
                     t('autoTrigger.accountSwitched', { email: existingEmail }) 
-                    || `已切换至: ${existingEmail}`
+                    || `已切换至: ${existingEmail}`,
                 );
             } else {
                 // 账户不存在，走导入弹框流程
-                logger.info(`[SwitchToClient] Account not found, showing import prompt for: ${currentEmail}`);
+                logger.info(`[SwitchToClient] Account not found, showing import prompt for: ${currentEmail} (source: ${source})`);
                 this.hud.sendMessage({
                     type: 'antigravityToolsSyncPrompt',
                     data: {
                         promptType: 'new_accounts',
                         newEmails: [currentEmail],
                         currentEmail: currentEmail,
+                        localEmail: source === 'local' ? currentEmail : undefined,
                         sameAccount: false,
                         autoConfirm: false,
                     },
@@ -1075,7 +1101,7 @@ export class MessageController {
             const err = error instanceof Error ? error.message : String(error);
             logger.warn(`[SwitchToClient] Failed: ${err}`);
             vscode.window.showWarningMessage(
-                t('antigravityToolsSync.switchFailed', { message: err }) || `切换失败: ${err}`
+                t('antigravityToolsSync.switchFailed', { message: err }) || `切换失败: ${err}`,
             );
         }
     }

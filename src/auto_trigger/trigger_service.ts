@@ -236,6 +236,7 @@ class TriggerService {
             let nextIndex = 0;
 
             const worker = async () => {
+                // eslint-disable-next-line no-constant-condition
                 while (true) {
                     const currentIndex = nextIndex++;
                     if (currentIndex >= triggerModels.length) {

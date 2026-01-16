@@ -472,7 +472,7 @@ export const en = {
     'antigravityToolsSync.switchTitle': 'Antigravity Tools Account Mismatch',
     'antigravityToolsSync.localAccount': 'Current Account',
     'antigravityToolsSync.switchBtn': 'Switch to This Account',
-    'antigravityToolsSync.alreadySynced': 'Account is already up-to-date with Antigravity Tools.',
+    'antigravityToolsSync.alreadySynced': 'Already using this account, no switch needed.',
     'antigravityToolsSync.autoImported': 'Auto-synced account: {email}',
     'antigravityToolsSync.imported': 'Account imported',
     'antigravityToolsSync.switched': 'Switched to {email}',

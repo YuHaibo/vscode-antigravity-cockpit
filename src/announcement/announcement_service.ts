@@ -20,7 +20,7 @@ const CACHE_TTL = 3600 * 1000; // 1 小时缓存
  * 简单的版本比较（支持 >=, <=, >, <, = 和 * 通配符）
  */
 function matchVersion(currentVersion: string, pattern: string): boolean {
-    if (!pattern || pattern === '*') return true;
+    if (!pattern || pattern === '*') {return true;}
     
     // 解析版本号为数字数组
     const parseVersion = (v: string): number[] => {
@@ -31,7 +31,7 @@ function matchVersion(currentVersion: string, pattern: string): boolean {
     
     // 支持 >= <= > < 前缀
     const match = pattern.match(/^(>=|<=|>|<|=)?(.+)$/);
-    if (!match) return true;
+    if (!match) {return true;}
     
     const [, op = '=', ver] = match;
     const target = parseVersion(ver);
@@ -70,7 +70,7 @@ class AnnouncementService {
      * 初始化服务
      */
     initialize(context: vscode.ExtensionContext): void {
-        if (this.initialized) return;
+        if (this.initialized) {return;}
         
         this.context = context;
         
@@ -166,7 +166,7 @@ class AnnouncementService {
                 if (!isAllLanguages) {
                     // 支持精确匹配 (zh-cn) 和前缀匹配 (zh)
                     const isMatch = ann.targetLanguages.some(lang => 
-                        lang.toLowerCase() === locale || locale.startsWith(lang.toLowerCase() + '-')
+                        lang.toLowerCase() === locale || locale.startsWith(lang.toLowerCase() + '-'),
                     );
                     if (!isMatch) {
                         return false;
@@ -189,7 +189,7 @@ class AnnouncementService {
             // 3. 多语言处理 (优先匹配全称如 zh-cn，其次匹配前缀如 zh)
             if (ann.locales) {
                 const localeKey = Object.keys(ann.locales).find(k => 
-                    k.toLowerCase() === locale || locale.startsWith(k.toLowerCase())
+                    k.toLowerCase() === locale || locale.startsWith(k.toLowerCase()),
                 );
 
                 if (localeKey && ann.locales[localeKey]) {
@@ -202,8 +202,8 @@ class AnnouncementService {
                         content: localized.content || ann.content,
                         action: ann.action ? {
                             ...ann.action,
-                            label: localized.actionLabel || ann.action.label
-                        } : ann.action
+                            label: localized.actionLabel || ann.action.label,
+                        } : ann.action,
                     };
                 }
             }
@@ -249,7 +249,7 @@ class AnnouncementService {
 
         // 找到需要弹框的未读公告（优先级最高的一条）
         const popupAnnouncement = announcements.find(
-            a => a.popup && !readIds.includes(a.id)
+            a => a.popup && !readIds.includes(a.id),
         ) || null;
 
         return {

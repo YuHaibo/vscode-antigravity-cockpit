@@ -13,7 +13,7 @@ import {
     AutoTriggerState,
     ScheduleConfig,
     AutoTriggerMessage,
-    SCHEDULE_PRESETS
+    SCHEDULE_PRESETS,
 } from './types';
 import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';

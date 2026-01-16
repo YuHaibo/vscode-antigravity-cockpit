@@ -1147,7 +1147,7 @@
             const parts = crontab.split(/\s+/);
             if (parts.length < 5) return [];
 
-            const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+            const [minute, hour, _dayOfMonth, _month, _dayOfWeek] = parts;
             const results = [];
             const now = new Date();
 

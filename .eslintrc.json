@@ -114,11 +114,51 @@
       "asyncArrow": "always"
     }]
   },
+  "overrides": [
+    {
+      "files": ["src/view/webview/*.js"],
+      "parser": "espree",
+      "parserOptions": {
+        "ecmaVersion": 2020,
+        "sourceType": "script",
+        "project": null
+      },
+      "env": {
+        "browser": true,
+        "es2020": true
+      },
+      "globals": {
+        "acquireVsCodeApi": "readonly"
+      },
+      "rules": {
+        // 禁用 TypeScript 特定规则
+        "@typescript-eslint/naming-convention": "off",
+        "@typescript-eslint/no-unused-vars": "off",
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-this-alias": "off",
+        // 启用 JS 的 no-undef 规则来检测未定义的函数/变量
+        "no-undef": "error",
+        "no-unused-vars": ["warn", {
+          "argsIgnorePattern": "^_",
+          "varsIgnorePattern": "^_"
+        }],
+        // 放宽一些规则（避免大量风格类错误）
+        "indent": "off",
+        "quotes": "off",
+        "semi": "off",
+        "comma-dangle": "off",
+        "curly": "off",
+        "no-inner-declarations": "off",
+        "no-extra-semi": "off",
+        "prefer-const": "off"
+      }
+    }
+  ],
   "ignorePatterns": [
     "out",
     "dist",
     "node_modules",
-    "**/*.d.ts",
-    "src/view/webview/*.js"
+    "**/*.d.ts"
   ]
 }
+

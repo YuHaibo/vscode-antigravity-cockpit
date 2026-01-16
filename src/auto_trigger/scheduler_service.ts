@@ -29,7 +29,7 @@ class CronParser {
                 return this.intervalToCrontab(
                     config.intervalHours || 4,
                     config.intervalStartTime || '00:00',
-                    config.intervalEndTime
+                    config.intervalEndTime,
                 );
             default:
                 return '0 8 * * *'; // 默认每天 8:00
@@ -114,7 +114,7 @@ class CronParser {
     private static intervalToCrontab(
         intervalHours: number,
         startTime: string,
-        endTime?: string
+        endTime?: string,
     ): string {
         const [startH, startM] = startTime.split(':').map(Number);
         const endH = endTime ? parseInt(endTime.split(':')[0], 10) : 23;
@@ -135,7 +135,7 @@ class CronParser {
      * 检查数组是否连续
      */
     private static isConsecutive(arr: number[]): boolean {
-        if (arr.length <= 1) return true;
+        if (arr.length <= 1) {return true;}
         for (let i = 1; i < arr.length; i++) {
             if (arr[i] !== arr[i - 1] + 1) {
                 return false;
@@ -205,7 +205,7 @@ class CronParser {
         hour: string,
         dayOfMonth: string,
         month: string,
-        dayOfWeek: string
+        dayOfWeek: string,
     ): string {
         if (dayOfMonth !== '*' || month !== '*') {
             return t('autoTrigger.desc.custom');
@@ -237,7 +237,7 @@ class CronParser {
             const dayNames = [
                 t('common.weekday.sun'), t('common.weekday.mon'), t('common.weekday.tue'), 
                 t('common.weekday.wed'), t('common.weekday.thu'), t('common.weekday.fri'), 
-                t('common.weekday.sat')
+                t('common.weekday.sat'),
             ];
             if (dayOfWeek === '1-5') {
                 parts.push(t('autoTrigger.desc.workday'));
@@ -304,7 +304,7 @@ class CronParser {
 
             // 排序并去重（按时间戳去重）
             const uniqueDates = Array.from(
-                new Map(allDates.map(d => [d.getTime(), d])).values()
+                new Map(allDates.map(d => [d.getTime(), d])).values(),
             );
             uniqueDates.sort((a, b) => a.getTime() - b.getTime());
 
@@ -406,7 +406,7 @@ class SchedulerService {
      * 调度下次运行
      */
     private scheduleNextRun(): void {
-        if (!this.schedule || !this.onTrigger) return;
+        if (!this.schedule || !this.onTrigger) {return;}
 
         const nextRun = this.getNextRunTime();
         if (!nextRun) {

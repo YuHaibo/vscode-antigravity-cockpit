@@ -68,7 +68,7 @@ async function readStateValue(dbPath: string): Promise<string> {
 
     try {
         db = new SQL.Database(fileBuffer);
-        const stmt = db.prepare(`SELECT value FROM ItemTable WHERE key = ?`);
+        const stmt = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
         stmt.bind([STATE_KEY]);
 
         if (stmt.step()) {

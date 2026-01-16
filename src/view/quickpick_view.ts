@@ -561,7 +561,7 @@ export class QuickPickView {
                     const newMappings = ReactorCore.calculateGroupMappings(this.lastSnapshot.models);
                     await configService.updateGroupMappings(newMappings);
                     vscode.window.showInformationMessage(
-                        t('grouping.autoGroupApplied', { count: Object.keys(newMappings).length })
+                        t('grouping.autoGroupApplied', { count: Object.keys(newMappings).length }),
                     );
                     // 需要触发数据刷新以更新分组
                     if (this.refreshCallback) {

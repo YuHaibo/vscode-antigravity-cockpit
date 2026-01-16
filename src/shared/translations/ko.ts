@@ -455,7 +455,7 @@ export const ko = {
     'antigravityToolsSync.switchTitle': 'Antigravity Tools 계정 불일치',
     'antigravityToolsSync.localAccount': '현재 설정된 계정',
     'antigravityToolsSync.switchBtn': '이 계정으로 전환',
-    'antigravityToolsSync.alreadySynced': '계정이 이미 Antigravity Tools와 동기화되어 있으며 최신 상태입니다.',
+    'antigravityToolsSync.alreadySynced': '이미 현재 로그인된 계정입니다. 전환이 필요하지 않습니다.',
     'antigravityToolsSync.autoImported': '계정 자동 동기화됨: {email}',
     'autoTrigger.antigravityToolsSyncTarget': 'Antigravity Tools 현재 계정',
     'autoTrigger.antigravityToolsSyncTitle': 'Antigravity Tools 계정 동기화',

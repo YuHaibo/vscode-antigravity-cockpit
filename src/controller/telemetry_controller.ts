@@ -324,7 +324,7 @@ export class TelemetryController {
                     }
                     vscode.window.showInformationMessage(
                         t('antigravityToolsSync.autoImported', { email: detection.currentEmail }) 
-                        || `已自动同步账户: ${detection.currentEmail}`
+                        || `已自动同步账户: ${detection.currentEmail}`,
                     );
                     logger.info(`AntigravityTools Sync: Auto-imported and switched to ${detection.currentEmail}`);
                 }
