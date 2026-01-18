@@ -266,6 +266,8 @@ export async function commitLocalCredential(
 
     await credentialStorage.saveCredential(credential);
     await credentialStorage.clearAccountInvalid(credential.email);
+    // 从自动导入黑名单中移除（用户手动导入的账户应该被允许自动导入）
+    await credentialStorage.removeFromAutoImportBlacklist(credential.email);
     await credentialStorage.setActiveAccount(credential.email);
 
     return { email: credential.email, existed };
@@ -281,6 +283,7 @@ export async function importLocalCredential(fallbackEmail?: string): Promise<{ e
  * 用于 local 配额模式下通过远端 API 获取配额数据
  * - 如果 credentialStorage 已有有效凭证，直接返回当前账户邮箱
  * - 如果没有，尝试从 state.vscdb 读取并保存到 credentialStorage
+ * - 如果账户在自动导入黑名单中（用户主动删除的），则不会自动重新导入
  * @returns 账户邮箱或 null
  */
 export async function ensureLocalCredentialImported(): Promise<{ email: string } | null> {
@@ -309,6 +312,12 @@ export async function ensureLocalCredentialImported(): Promise<{ email: string }
 
         if (!credential.email || !credential.accessToken) {
             logger.debug('[LocalAuth] Failed to build credential: missing email or accessToken');
+            return null;
+        }
+
+        // 检查账户是否在自动导入黑名单中（用户主动删除的账户不应该被自动重新导入）
+        if (credentialStorage.isInAutoImportBlacklist(credential.email)) {
+            logger.info(`[LocalAuth] Skipping auto-import for ${credential.email}: account is in blacklist (previously deleted by user)`);
             return null;
         }
 

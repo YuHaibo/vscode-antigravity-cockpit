@@ -883,10 +883,6 @@
                                             <span class="at-sync-info-text">${i18n['atSyncConfig.autoSyncDesc'] || '启用后检测到 Antigravity Tools 新账号时自动导入（是否切换由“自动切换”控制）。'}</span>
                                         </div>
                                         <div class="at-sync-info-line">
-                                            <span class="at-sync-info-label">${i18n['atSyncConfig.autoSwitchTitle'] || '自动切换'}：</span>
-                                            <span class="at-sync-info-text">${i18n['atSyncConfig.autoSwitchDesc'] || '启用后优先切换到 Antigravity Tools 当前账号；不可用则跟随本地客户端账号（仅授权模式生效）。'}</span>
-                                        </div>
-                                        <div class="at-sync-info-line">
                                             <span class="at-sync-info-label">${i18n['atSyncConfig.manualImportTitle'] || '手动导入'}：</span>
                                             <span class="at-sync-info-text">${i18n['atSyncConfig.manualImportDesc'] || '分别导入本地账户或 Antigravity Tools 账户，仅执行一次。'}</span>
                                         </div>
@@ -902,12 +898,6 @@
                                     <label class="at-sync-toggle-label">
                                         <input type="checkbox" id="at-sync-modal-checkbox" ${antigravityToolsSyncEnabled ? 'checked' : ''}>
                                         <span>${i18n['atSyncConfig.enableAutoSync'] || '自动同步Antigravity Tools账户'}</span>
-                                    </label>
-                                </div>
-                                <div class="at-sync-toggle-card">
-                                    <label class="at-sync-toggle-label">
-                                        <input type="checkbox" id="at-sync-modal-switch-checkbox" ${antigravityToolsAutoSwitchEnabled ? 'checked' : ''}>
-                                        <span>${i18n['atSyncConfig.enableAutoSwitch'] || '自动切换账户'}</span>
                                     </label>
                                 </div>
                             </div>
@@ -944,10 +934,8 @@
         if (syncCheckbox) {
             syncCheckbox.checked = antigravityToolsSyncEnabled;
         }
-        const switchCheckboxEl = modal.querySelector('#at-sync-modal-switch-checkbox');
-        if (switchCheckboxEl) {
-            switchCheckboxEl.checked = antigravityToolsAutoSwitchEnabled;
-        }
+
+
         modal.querySelectorAll('.at-sync-details').forEach((detail) => {
             detail.removeAttribute('open');
         });
@@ -956,7 +944,6 @@
         const newCheckbox = modal.querySelector('#at-sync-modal-checkbox');
         const importLocalBtn = modal.querySelector('#at-sync-modal-import-local-btn');
         const importToolsBtn = modal.querySelector('#at-sync-modal-import-tools-btn');
-        const switchCheckboxControl = modal.querySelector('#at-sync-modal-switch-checkbox');
 
         // 移除旧的事件监听器
         const newCheckboxClone = newCheckbox.cloneNode(true);
@@ -965,19 +952,12 @@
         importLocalBtn.parentNode.replaceChild(importLocalBtnClone, importLocalBtn);
         const importToolsBtnClone = importToolsBtn.cloneNode(true);
         importToolsBtn.parentNode.replaceChild(importToolsBtnClone, importToolsBtn);
-        const switchCheckboxClone = switchCheckboxControl.cloneNode(true);
-        switchCheckboxControl.parentNode.replaceChild(switchCheckboxClone, switchCheckboxControl);
 
         // 绑定新的事件监听器
         modal.querySelector('#at-sync-modal-checkbox')?.addEventListener('change', (e) => {
             const enabled = e.target.checked;
             antigravityToolsSyncEnabled = enabled;
             vscode.postMessage({ command: 'antigravityToolsSync.toggle', enabled });
-        });
-        modal.querySelector('#at-sync-modal-switch-checkbox')?.addEventListener('change', (e) => {
-            const enabled = e.target.checked;
-            antigravityToolsAutoSwitchEnabled = enabled;
-            vscode.postMessage({ command: 'antigravityToolsSync.toggleAutoSwitch', enabled });
         });
 
         modal.querySelector('#at-sync-modal-import-local-btn')?.addEventListener('click', () => {

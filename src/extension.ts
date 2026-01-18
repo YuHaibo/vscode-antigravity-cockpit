@@ -96,6 +96,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 初始化自动触发控制器
     autoTriggerController.initialize(context);
 
+    // 启动时自动同步到客户端当前登录账户
+    // 必须同步等待完成，避免与后续操作产生竞态条件
+    try {
+        const syncResult = await autoTriggerController.syncToClientAccountOnStartup();
+        if (syncResult === 'switched') {
+            logger.info('[Startup] Auto-switched to client account');
+        }
+    } catch (err) {
+        logger.debug(`[Startup] Account sync skipped: ${err instanceof Error ? err.message : err}`);
+    }
+
     // 初始化公告服务
     announcementService.initialize(context);
 

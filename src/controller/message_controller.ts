@@ -1020,28 +1020,17 @@ export class MessageController {
     private async handleSwitchToClientAccount(): Promise<void> {
         try {
             let currentEmail: string | null = null;
-            let source: 'local' | 'tools' = 'local';
+            const source = 'local' as const;
             
-            // 优先从本地 Antigravity 客户端读取当前账户
+            // 仅检测本地 Antigravity 客户端读取当前账户
             try {
                 const preview = await previewLocalCredential();
                 if (preview?.email) {
                     currentEmail = preview.email;
-                    source = 'local';
                     logger.info(`[SwitchToClient] Found local client account: ${currentEmail}`);
                 }
             } catch (localErr) {
                 logger.debug(`[SwitchToClient] Local client detection failed: ${localErr instanceof Error ? localErr.message : localErr}`);
-            }
-            
-            // 如果本地客户端没有，尝试 Antigravity Tools
-            if (!currentEmail) {
-                const detection = await antigravityToolsSyncService.detect();
-                if (detection?.currentEmail) {
-                    currentEmail = detection.currentEmail;
-                    source = 'tools';
-                    logger.info(`[SwitchToClient] Found Antigravity Tools account: ${currentEmail}`);
-                }
             }
             
             if (!currentEmail) {
@@ -1069,9 +1058,9 @@ export class MessageController {
             );
 
             if (existingEmail) {
-                // 账户已存在，直接切换
+                // 账户已存在，通过 autoTriggerController 切换（使用互斥锁保护）
                 logger.info(`[SwitchToClient] Switching to existing account: ${existingEmail}`);
-                await credentialStorage.setActiveAccount(existingEmail);
+                await autoTriggerController.switchAccount(existingEmail);
                 const state = await autoTriggerController.getState();
                 this.hud.sendMessage({ type: 'autoTriggerState', data: state });
                 

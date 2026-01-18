@@ -293,11 +293,7 @@
                                         <div class="at-sync-info-block">
                                             <div class="at-sync-info-line">
                                                 <span class="at-sync-info-label">${t('atSyncConfig.autoSyncTitle') || '自动同步'}：</span>
-                                                <span class="at-sync-info-text">${t('atSyncConfig.autoSyncDesc') || '启用后检测到 Antigravity Tools 新账号时自动导入（是否切换由“自动切换”控制）。'}</span>
-                                            </div>
-                                            <div class="at-sync-info-line">
-                                                <span class="at-sync-info-label">${t('atSyncConfig.autoSwitchTitle') || '自动切换'}：</span>
-                                                <span class="at-sync-info-text">${t('atSyncConfig.autoSwitchDesc') || '启用后优先切换到 Antigravity Tools 当前账号；不可用则跟随本地客户端账号（仅授权模式生效）。'}</span>
+                                                <span class="at-sync-info-text">${t('atSyncConfig.autoSyncDesc') || '启用后检测到 Antigravity Tools 新账号时自动导入。'}</span>
                                             </div>
                                             <div class="at-sync-info-line">
                                                 <span class="at-sync-info-label">${t('atSyncConfig.manualImportTitle') || '手动导入'}：</span>
@@ -313,12 +309,6 @@
                                     <label class="at-sync-toggle-label">
                                         <input type="checkbox" id="at-sync-modal-checkbox">
                                         <span>${t('atSyncConfig.enableAutoSync') || '自动同步Antigravity Tools账户'}</span>
-                                    </label>
-                                </div>
-                                <div class="at-sync-toggle-card">
-                                    <label class="at-sync-toggle-label">
-                                        <input type="checkbox" id="at-sync-modal-switch-checkbox">
-                                        <span>${t('atSyncConfig.enableAutoSwitch') || '自动切换账户'}</span>
                                     </label>
                                 </div>
                             </div>
@@ -339,10 +329,6 @@
                     this.state.antigravityToolsSyncEnabled = e.target.checked;
                     this.vscode.postMessage({ command: 'antigravityToolsSync.toggle', enabled: e.target.checked });
                 });
-                modal.querySelector('#at-sync-modal-switch-checkbox')?.addEventListener('change', (e) => {
-                    this.state.antigravityToolsAutoSwitchEnabled = e.target.checked;
-                    this.vscode.postMessage({ command: 'antigravityToolsSync.toggleAutoSwitch', enabled: e.target.checked });
-                });
                 modal.querySelector('#at-sync-modal-import-local-btn')?.addEventListener('click', () => {
                     if (typeof window.showLocalAuthImportLoading === 'function') {
                         window.showLocalAuthImportLoading();
@@ -358,8 +344,6 @@
 
             const checkbox = modal.querySelector('#at-sync-modal-checkbox');
             if (checkbox) checkbox.checked = this.state.antigravityToolsSyncEnabled;
-            const switchCheckbox = modal.querySelector('#at-sync-modal-switch-checkbox');
-            if (switchCheckbox) switchCheckbox.checked = this.state.antigravityToolsAutoSwitchEnabled;
             modal.querySelectorAll('.at-sync-details').forEach((detail) => {
                 detail.removeAttribute('open');
             });

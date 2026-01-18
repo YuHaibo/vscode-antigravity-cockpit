@@ -33,6 +33,28 @@ class AutoTriggerController {
     private modelIdToConstant: Map<string, string> = new Map();
     /** Fallback 定时器列表 (时段外固定时间触发) */
     private fallbackTimers: ReturnType<typeof setTimeout>[] = [];
+    /** 账户操作互斥锁，防止并发账户操作导致状态不一致 */
+    private accountOperationLock: Promise<void> = Promise.resolve();
+
+    /**
+     * 执行账户操作时获取互斥锁
+     * 确保同一时间只有一个账户操作（删除、切换、导入等）在执行
+     */
+    private async withAccountLock<T>(operation: () => Promise<T>): Promise<T> {
+        // 等待前一个操作完成
+        const previousLock = this.accountOperationLock;
+        let releaseLock: () => void;
+        this.accountOperationLock = new Promise<void>(resolve => {
+            releaseLock = resolve;
+        });
+
+        try {
+            await previousLock;
+            return await operation();
+        } finally {
+            releaseLock!();
+        }
+    }
 
 
     /**
@@ -170,52 +192,54 @@ class AutoTriggerController {
      * @param email 要移除的账号邮箱
      */
     async removeAccount(email: string): Promise<void> {
-        await oauthService.revokeAccount(email);
+        return this.withAccountLock(async () => {
+            await oauthService.revokeAccount(email);
 
-        const schedule = credentialStorage.getState<ScheduleConfig>(SCHEDULE_CONFIG_KEY, {
-            enabled: false,
-            repeatMode: 'daily',
-            selectedModels: ['gemini-3-flash'],
-            maxOutputTokens: 0,
-        });
-        const remainingCredentials = await credentialStorage.getAllCredentials();
-        const remainingEmails = Object.keys(remainingCredentials);
-        const activeAccount = await credentialStorage.getActiveAccount();
-        let scheduleChanged = false;
+            const schedule = credentialStorage.getState<ScheduleConfig>(SCHEDULE_CONFIG_KEY, {
+                enabled: false,
+                repeatMode: 'daily',
+                selectedModels: ['gemini-3-flash'],
+                maxOutputTokens: 0,
+            });
+            const remainingCredentials = await credentialStorage.getAllCredentials();
+            const remainingEmails = Object.keys(remainingCredentials);
+            const activeAccount = await credentialStorage.getActiveAccount();
+            let scheduleChanged = false;
 
-        if (Array.isArray(schedule.selectedAccounts)) {
-            const filtered = schedule.selectedAccounts.filter(account => remainingEmails.includes(account));
-            if (filtered.length !== schedule.selectedAccounts.length) {
-                schedule.selectedAccounts = filtered;
-                scheduleChanged = true;
+            if (Array.isArray(schedule.selectedAccounts)) {
+                const filtered = schedule.selectedAccounts.filter(account => remainingEmails.includes(account));
+                if (filtered.length !== schedule.selectedAccounts.length) {
+                    schedule.selectedAccounts = filtered;
+                    scheduleChanged = true;
 
-                // 如果勾选的账号被全部移除，自动关闭自动唤醒
-                if (filtered.length === 0 && schedule.enabled) {
-                    schedule.enabled = false;
-                    schedulerService.stop();
-                    this.stopFallbackScheduler();
-                    logger.info('[AutoTriggerController] All selected accounts removed, disabling schedule');
+                    // 如果勾选的账号被全部移除，自动关闭自动唤醒
+                    if (filtered.length === 0 && schedule.enabled) {
+                        schedule.enabled = false;
+                        schedulerService.stop();
+                        this.stopFallbackScheduler();
+                        logger.info('[AutoTriggerController] All selected accounts removed, disabling schedule');
+                    }
                 }
             }
-        }
 
-        // Check if there are remaining accounts
-        const hasAuth = await credentialStorage.hasValidCredential();
-        if (!hasAuth) {
-            // No accounts left, stop scheduler and disable schedule
-            schedulerService.stop();
-            if (schedule.enabled) {
-                schedule.enabled = false;
-                scheduleChanged = true;
+            // Check if there are remaining accounts
+            const hasAuth = await credentialStorage.hasValidCredential();
+            if (!hasAuth) {
+                // No accounts left, stop scheduler and disable schedule
+                schedulerService.stop();
+                if (schedule.enabled) {
+                    schedule.enabled = false;
+                    scheduleChanged = true;
+                }
             }
-        }
 
-        if (scheduleChanged) {
-            await credentialStorage.saveState(SCHEDULE_CONFIG_KEY, schedule);
-        }
+            if (scheduleChanged) {
+                await credentialStorage.saveState(SCHEDULE_CONFIG_KEY, schedule);
+            }
 
-        this.updateStatusBar();
-        this.notifyStateUpdate();
+            this.updateStatusBar();
+            this.notifyStateUpdate();
+        });
     }
 
     /**
@@ -223,9 +247,11 @@ class AutoTriggerController {
      * @param email 要切换到的账号邮箱
      */
     async switchAccount(email: string): Promise<void> {
-        await credentialStorage.setActiveAccount(email);
-        logger.info(`[AutoTriggerController] Switched to account: ${email}`);
-        this.notifyStateUpdate();
+        return this.withAccountLock(async () => {
+            await credentialStorage.setActiveAccount(email);
+            logger.info(`[AutoTriggerController] Switched to account: ${email}`);
+            this.notifyStateUpdate();
+        });
     }
 
     /**
@@ -888,6 +914,83 @@ class AutoTriggerController {
         return typeof schedule.maxOutputTokens === 'number' && schedule.maxOutputTokens >= 0
             ? Math.floor(schedule.maxOutputTokens)
             : 0;
+    }
+
+    /**
+     * 启动时自动同步到客户端当前登录账户
+     * 优先检测本地 Antigravity 客户端，其次检测 Antigravity Tools：
+     * - 如果客户端账户已存在于 Cockpit，自动切换
+     * - 如果账户不存在，静默跳过（不弹框打扰用户）
+     * @returns 切换结果：'switched' 已切换, 'same' 已是当前账户, 'not_found' 未检测到账户, 'not_exists' 账户未导入
+     */
+    async syncToClientAccountOnStartup(): Promise<'switched' | 'same' | 'not_found' | 'not_exists'> {
+        return this.withAccountLock(async () => {
+            try {
+                let currentEmail: string | null = null;
+                const source = 'local' as const;
+                
+                // 动态导入，避免循环依赖
+                const { previewLocalCredential } = await import('./local_auth_importer');
+                
+                // 仅检测本地 Antigravity 客户端读取当前账户
+                try {
+                    const preview = await previewLocalCredential();
+                    if (preview?.email) {
+                        currentEmail = preview.email;
+                        logger.debug(`[AutoTriggerController] Startup sync: found local client account: ${currentEmail}`);
+                    }
+                } catch (localErr) {
+                    logger.debug(`[AutoTriggerController] Startup sync: local client detection failed: ${localErr instanceof Error ? localErr.message : localErr}`);
+                }
+                
+                if (!currentEmail) {
+                    logger.debug('[AutoTriggerController] Startup sync: no local client account detected');
+                    return 'not_found';
+                }
+
+                const activeEmail = await credentialStorage.getActiveAccount();
+                const currentEmailLower = currentEmail.toLowerCase();
+                
+                // 检查是否已是当前账户
+                if (activeEmail && activeEmail.toLowerCase() === currentEmailLower) {
+                    logger.debug(`[AutoTriggerController] Startup sync: already using account ${activeEmail}`);
+                    return 'same';
+                }
+
+                // 检查账户是否已存在于 Cockpit
+                const accounts = await credentialStorage.getAllCredentials();
+                const existingEmail = Object.keys(accounts).find(
+                    email => email.toLowerCase() === currentEmailLower,
+                );
+
+                if (existingEmail) {
+                    // 账户已存在，直接切换
+                    logger.info(`[AutoTriggerController] Startup sync: switching to existing account: ${existingEmail} (source: ${source})`);
+                    await credentialStorage.setActiveAccount(existingEmail);
+                    this.notifyStateUpdate();
+                    return 'switched';
+                } else {
+                    // 账户不存在，静默导入并切换
+                    logger.info(`[AutoTriggerController] Startup sync: account ${currentEmail} not found, importing silently...`);
+                    try {
+                        const { importLocalCredential } = await import('./local_auth_importer');
+                        const result = await importLocalCredential();
+                        if (result?.email) {
+                            logger.info(`[AutoTriggerController] Startup sync: imported and switched to ${result.email}`);
+                            this.notifyStateUpdate();
+                            return 'switched';
+                        }
+                    } catch (importErr) {
+                        logger.warn(`[AutoTriggerController] Startup sync: silent import failed: ${importErr instanceof Error ? importErr.message : importErr}`);
+                    }
+                    return 'not_exists';
+                }
+            } catch (error) {
+                const err = error instanceof Error ? error.message : String(error);
+                logger.warn(`[AutoTriggerController] Startup sync failed: ${err}`);
+                return 'not_found';
+            }
+        });
     }
 
     /**

@@ -17,6 +17,8 @@ const LEGACY_CREDENTIAL_KEY = 'antigravity.autoTrigger.credential';
 const CREDENTIALS_KEY = 'antigravity.autoTrigger.credentials';
 const ACTIVE_ACCOUNT_KEY = 'antigravity.autoTrigger.activeAccount';
 const STATE_KEY = 'antigravity.autoTrigger.state';
+// 禁止自动导入的账户黑名单（用户主动删除的账户不应该被自动重新导入）
+const AUTO_IMPORT_BLACKLIST_KEY = 'antigravity.autoTrigger.autoImportBlacklist';
 
 /**
  * Multi-account credentials storage format
@@ -172,6 +174,9 @@ class CredentialStorage {
         delete storage.accounts[email];
         await this.saveCredentialsStorage(storage);
 
+        // 将账户加入自动导入黑名单，防止刷新配额时自动重新导入
+        await this.addToAutoImportBlacklist(email);
+
         // If deleted account was active, set another as active
         const activeAccount = await this.getActiveAccount();
         if (activeAccount === email) {
@@ -208,6 +213,57 @@ class CredentialStorage {
      */
     async clearAccountInvalid(email: string): Promise<void> {
         await this.markAccountInvalid(email, false);
+    }
+
+    // ============ 自动导入黑名单管理 ============
+
+    /**
+     * 将账户添加到自动导入黑名单
+     * 被加入黑名单的账户不会被 ensureLocalCredentialImported 自动重新导入
+     */
+    async addToAutoImportBlacklist(email: string): Promise<void> {
+        this.ensureInitialized();
+        const blacklist = this.globalState!.get<string[]>(AUTO_IMPORT_BLACKLIST_KEY, []);
+        const emailLower = email.toLowerCase();
+        if (!blacklist.some(e => e.toLowerCase() === emailLower)) {
+            blacklist.push(email);
+            await this.globalState!.update(AUTO_IMPORT_BLACKLIST_KEY, blacklist);
+            logger.info(`[CredentialStorage] Added ${email} to auto-import blacklist`);
+        }
+    }
+
+    /**
+     * 从自动导入黑名单中移除账户
+     * 当用户手动重新添加/授权账户时调用
+     */
+    async removeFromAutoImportBlacklist(email: string): Promise<void> {
+        this.ensureInitialized();
+        const blacklist = this.globalState!.get<string[]>(AUTO_IMPORT_BLACKLIST_KEY, []);
+        const emailLower = email.toLowerCase();
+        const filtered = blacklist.filter(e => e.toLowerCase() !== emailLower);
+        if (filtered.length !== blacklist.length) {
+            await this.globalState!.update(AUTO_IMPORT_BLACKLIST_KEY, filtered);
+            logger.info(`[CredentialStorage] Removed ${email} from auto-import blacklist`);
+        }
+    }
+
+    /**
+     * 检查账户是否在自动导入黑名单中
+     */
+    isInAutoImportBlacklist(email: string): boolean {
+        this.ensureInitialized();
+        const blacklist = this.globalState!.get<string[]>(AUTO_IMPORT_BLACKLIST_KEY, []);
+        const emailLower = email.toLowerCase();
+        return blacklist.some(e => e.toLowerCase() === emailLower);
+    }
+
+    /**
+     * 清空自动导入黑名单
+     */
+    async clearAutoImportBlacklist(): Promise<void> {
+        this.ensureInitialized();
+        await this.globalState!.update(AUTO_IMPORT_BLACKLIST_KEY, []);
+        logger.info('[CredentialStorage] Auto-import blacklist cleared');
     }
 
     /**

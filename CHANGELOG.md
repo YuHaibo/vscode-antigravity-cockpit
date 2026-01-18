@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.39]
+
+### Fixed
+- **Race Conditions**: Fixed multiple account operations (delete, switch, import) executing concurrently causing inconsistent state.
+  - Added account operation mutex lock to ensure serialized execution
+  - Fixed startup account sync racing with user-initiated operations
+  - Fixed deleted accounts being auto-reimported during quota refresh (added auto-import blacklist mechanism)
+- **Account Switching**: Fixed auto-switch logic still detecting Antigravity Tools accounts.
+
+### Changed
+- **Account Switching**: Account switching now **follows local Antigravity client only** (`state.vscdb`), no longer detects Antigravity Tools.
+  - Startup automatically syncs to local client's current login (silent import and switch)
+  - "Switch to Current Login" button only detects local client
+- **Antigravity Tools Sync**: Auto-sync feature now **only imports accounts, no longer auto-switches**.
+- **UI**: Removed the "Auto Switch Account" checkbox and related descriptions from the "Account Sync Settings" modal.
+
 ## [1.8.38]
 
 ### Fixed

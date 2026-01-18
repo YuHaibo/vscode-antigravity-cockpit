@@ -98,12 +98,16 @@ export class AntigravityToolsSyncService {
                 if (credentialEmailLower === currentEmailLower) {
                     await credentialStorage.saveCredential(credential);
                     await credentialStorage.clearAccountInvalid(targetEmail);
+                    // 从自动导入黑名单中移除（用户手动导入的账户应该被允许自动导入）
+                    await credentialStorage.removeFromAutoImportBlacklist(targetEmail);
                 }
                 continue;
             }
 
             await credentialStorage.saveCredentialForAccount(targetEmail, credential);
             await credentialStorage.clearAccountInvalid(targetEmail);
+            // 从自动导入黑名单中移除（用户手动导入的账户应该被允许自动导入）
+            await credentialStorage.removeFromAutoImportBlacklist(targetEmail);
             existingByLower.set(credentialEmailLower, targetEmail);
         }
 

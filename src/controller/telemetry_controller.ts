@@ -270,81 +270,52 @@ export class TelemetryController {
     }
 
     /**
-     * 后台自动同步 Antigravity Tools 账户
+     * 后台自动同步 Antigravity Tools 账户（仅导入，不切换）
      */
     private async performAutoSync(): Promise<void> {
         try {
             const autoSyncEnabled = configService.getStateFlag('antigravityToolsSyncEnabled', false);
-            const autoSwitchEnabled = configService.getStateFlag('antigravityToolsAutoSwitchEnabled', true);
             if (!autoSyncEnabled) {
                 return;
             }
             const detection = await antigravityToolsSyncService.detect();
-            const activeEmail = await credentialStorage.getActiveAccount();
 
             // 未检测到 AntigravityTools 数据，静默跳过
             if (!detection || !detection.currentEmail) {
                 return;
             }
 
-            const sameAccount = activeEmail
-                ? detection.currentEmail.toLowerCase() === activeEmail.toLowerCase()
-                : false;
-
-            // 账户一致，无需操作
-            if (sameAccount) {
-                return;
-            }
-
-            // 有新账户需要导入
+            // 只导入新账户，不切换（账户切换由本地客户端同步逻辑控制）
             if (detection.newEmails.length > 0) {
                 if (this.hud.isVisible()) {
-                    // 面板可见，发送弹框消息（autoConfirm=true 让前端自动确认）
+                    // 面板可见，发送弹框消息（autoConfirmImportOnly=true 只导入不切换）
                     this.hud.sendMessage({
                         type: 'antigravityToolsSyncPrompt',
                         data: {
                             promptType: 'new_accounts',
                             newEmails: detection.newEmails,
                             currentEmail: detection.currentEmail,
-                            sameAccount,
+                            sameAccount: false,
                             autoConfirm: true,
-                            autoConfirmImportOnly: !autoSwitchEnabled,
+                            autoConfirmImportOnly: true, // 始终只导入，不切换
                         },
                     });
                 } else {
-                    // 面板不可见，静默导入
-                    await antigravityToolsSyncService.importAndSwitch(activeEmail, !autoSwitchEnabled);
+                    // 面板不可见，静默导入（importOnly=true 只导入不切换）
+                    const activeEmail = await credentialStorage.getActiveAccount();
+                    await antigravityToolsSyncService.importAndSwitch(activeEmail, true);
                     // 刷新状态
                     const state = await autoTriggerController.getState();
                     this.hud.sendMessage({ type: 'autoTriggerState', data: state });
                     this.hud.sendMessage({ type: 'antigravityToolsSyncComplete', data: { success: true } });
-                    // 修复：自动导入并切换后，必须同步新账号配额数据
-                    if (autoSwitchEnabled && configService.getConfig().quotaSource === 'authorized') {
-                        this.reactor.syncTelemetry();
-                    }
                     vscode.window.showInformationMessage(
                         t('antigravityToolsSync.autoImported', { email: detection.currentEmail }) 
-                        || `已自动同步账户: ${detection.currentEmail}`,
+                        || `已自动导入账户: ${detection.currentEmail}`,
                     );
-                    logger.info(`AntigravityTools Sync: Auto-imported and switched to ${detection.currentEmail}`);
+                    logger.info(`AntigravityTools Sync: Auto-imported ${detection.newEmails.join(', ')} (no switch)`);
                 }
-                return;
             }
-
-            // 只需切换（账户已存在本地）
-            if (!autoSwitchEnabled) {
-                return;
-            }
-            await antigravityToolsSyncService.switchOnly(detection.currentEmail);
-            // 刷新状态
-            const state = await autoTriggerController.getState();
-            this.hud.sendMessage({ type: 'autoTriggerState', data: state });
-            this.hud.sendMessage({ type: 'antigravityToolsSyncComplete', data: { success: true } });
-            // 修复：自动切换账号后必须同步最新配额数据，避免显示旧账号配额
-            if (configService.getConfig().quotaSource === 'authorized') {
-                this.reactor.syncTelemetry();
-            }
-            logger.info(`AntigravityTools Sync: Auto-switched to ${detection.currentEmail}`);
+            // 不再自动切换账户，账户切换完全由本地客户端同步逻辑控制
         } catch (error: unknown) {
             const err = error instanceof Error ? error.message : String(error);
             logger.warn(`AntigravityTools Sync auto-sync failed: ${err}`);

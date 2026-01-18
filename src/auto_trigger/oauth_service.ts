@@ -92,6 +92,9 @@ class OAuthService {
             const email = await this.fetchUserEmail(credential.accessToken);
             credential.email = email;
 
+            // 从自动导入黑名单中移除（用户主动授权的账户应该被允许自动导入）
+            await credentialStorage.removeFromAutoImportBlacklist(email);
+
             // 9. Check for duplicate account
             const isDuplicate = await credentialStorage.hasAccount(email);
             if (isDuplicate) {
