@@ -8,6 +8,15 @@
 
 ---
 
+## [1.8.40]
+
+### 新增
+- **国际化**：新增阿拉伯语支持 (🇸🇦 العربية) - 感谢 [@mohammad-albarham](https://github.com/mohammad-albarham)！([#69](https://github.com/jlcodes99/vscode-antigravity-cockpit/pull/69))
+- **国际化**：新增越南语支持 (🇻🇳 Tiếng Việt) - 感谢 [@tienoho](https://github.com/tienoho)！([#73](https://github.com/jlcodes99/vscode-antigravity-cockpit/pull/73))
+
+### 修复
+- **国际化**：修复 footer 中硬编码的 "⭐ Star" 文本，改为使用 i18n 系统 - 感谢 [@mohammad-albarham](https://github.com/mohammad-albarham)！([#69](https://github.com/jlcodes99/vscode-antigravity-cockpit/pull/69))
+
 ## [1.8.39]
 
 ### 修复

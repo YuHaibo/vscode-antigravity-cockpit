@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.40]
+
+### Added
+- **i18n**: Added Arabic language support (🇸🇦 العربية) - Thanks to [@mohammad-albarham](https://github.com/mohammad-albarham)! ([#69](https://github.com/jlcodes99/vscode-antigravity-cockpit/pull/69))
+- **i18n**: Added Vietnamese language support (🇻🇳 Tiếng Việt) - Thanks to [@tienoho](https://github.com/tienoho)! ([#73](https://github.com/jlcodes99/vscode-antigravity-cockpit/pull/73))
+
+### Fixed
+- **i18n**: Fixed hardcoded "⭐ Star" text in footer to use i18n system - Thanks to [@mohammad-albarham](https://github.com/mohammad-albarham)! ([#69](https://github.com/jlcodes99/vscode-antigravity-cockpit/pull/69))
+
 ## [1.8.39]
 
 ### Fixed
