@@ -3,7 +3,7 @@
  * 调度服务：解析 cron 表达式、计算下次运行时间、管理定时任务
  */
 
-import { ScheduleConfig, ScheduleRepeatMode, DayOfWeek, CrontabParseResult } from './types';
+import { ScheduleConfig, CrontabParseResult } from './types';
 import { CronExpressionParser } from 'cron-parser';
 import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';

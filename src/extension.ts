@@ -8,10 +8,12 @@ import { ProcessHunter } from './engine/hunter';
 import { ReactorCore } from './engine/reactor';
 import { logger } from './shared/log_service';
 import { configService, CockpitConfig } from './shared/config_service';
-import { t, i18n } from './shared/i18n';
+import { t, i18n, normalizeLocaleInput } from './shared/i18n';
 import { CockpitHUD } from './view/hud';
 import { QuickPickView } from './view/quickpick_view';
+import { AccountsOverviewWebview } from './view/accountsOverviewWebview';
 import { initErrorReporter, captureError, flushEvents } from './shared/error_reporter';
+import { AccountsRefreshService } from './services/accountsRefreshService';
 
 // Controllers
 import { StatusBarController } from './controller/status_bar_controller';
@@ -19,13 +21,23 @@ import { CommandController } from './controller/command_controller';
 import { MessageController } from './controller/message_controller';
 import { TelemetryController } from './controller/telemetry_controller';
 import { autoTriggerController } from './auto_trigger/controller';
+import { credentialStorage } from './auto_trigger';
 import { announcementService } from './announcement';
+
+// Account Tree View
+import { AccountTreeProvider, registerAccountTreeCommands } from './view/accountTree';
+
+// WebSocket Client
+import { cockpitToolsWs } from './services/cockpitToolsWs';
+import { cockpitToolsSyncEvents } from './services/cockpitToolsSync';
 
 // 全局模块实例
 let hunter: ProcessHunter;
 let reactor: ReactorCore;
 let hud: CockpitHUD;
+let accountsOverview: AccountsOverviewWebview;
 let quickPickView: QuickPickView;
+let accountsRefreshService: AccountsRefreshService;
 
 // Controllers
 let statusBar: StatusBarController;
@@ -55,6 +67,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         i18n.applyLanguageSetting(savedLanguage);
     }
 
+    // 启动时同步：读取共享配置文件，与本地配置比较时间戳后合并
+    try {
+        const { mergeSettingOnStartup } = await import('./services/syncSettings');
+        const mergedLanguage = mergeSettingOnStartup('language', savedLanguage || 'auto');
+        if (mergedLanguage) {
+            logger.info(`[SyncSettings] 启动时合并语言设置: ${savedLanguage} -> ${mergedLanguage}`);
+            await configService.updateConfig('language', mergedLanguage);
+            i18n.applyLanguageSetting(mergedLanguage);
+        }
+    } catch (err) {
+        logger.debug(`[SyncSettings] 启动时同步失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     // 获取插件版本号
     const packageJson = await import('../package.json');
     const version = packageJson.version || 'unknown';
@@ -67,9 +92,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 初始化核心模块
     hunter = new ProcessHunter();
     reactor = new ReactorCore();
+    accountsRefreshService = new AccountsRefreshService(reactor);
     hud = new CockpitHUD(context.extensionUri, context);
+    accountsOverview = new AccountsOverviewWebview(context.extensionUri, context, reactor, accountsRefreshService);
     quickPickView = new QuickPickView();
     lastQuotaSource = configService.getConfig().quotaSource === 'authorized' ? 'authorized' : 'local';
+
+    // 设置账号总览关闭回调：重新打开 Dashboard
+    accountsOverview.onClose(() => {
+        // 延迟一下以确保面板已关闭
+        setTimeout(() => {
+            vscode.commands.executeCommand('agCockpit.open');
+        }, 100);
+    });
+
+    // 注册账号总览命令
+    context.subscriptions.push(
+        vscode.commands.registerCommand('agCockpit.openAccountsOverview', async () => {
+            // 先关闭 Dashboard
+            hud.dispose();
+            // 打开账号总览
+            await accountsOverview.show();
+        }),
+    );
+
+    // 注册从账号总览返回 Dashboard 的命令
+    context.subscriptions.push(
+        vscode.commands.registerCommand('agCockpit.backToDashboard', () => {
+            accountsOverview.dispose();
+            // onClose 回调会自动打开 Dashboard
+        }),
+    );
 
     // 注册 Webview Panel Serializer，确保插件重载后能恢复 panel 引用
     context.subscriptions.push(hud.registerSerializer());
@@ -109,6 +162,97 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // 初始化公告服务
     announcementService.initialize(context);
+
+    // 初始化 Account Tree View
+    const accountTreeProvider = new AccountTreeProvider(accountsRefreshService);
+    const accountTreeView = vscode.window.createTreeView('agCockpit.accountTree', {
+        treeDataProvider: accountTreeProvider,
+        showCollapseAll: true,
+    });
+    context.subscriptions.push(accountTreeView);
+    context.subscriptions.push({ dispose: () => accountsRefreshService.dispose() });
+    registerAccountTreeCommands(context, accountTreeProvider);
+
+    // 连接 Cockpit Tools WebSocket
+    cockpitToolsWs.connect();
+
+    cockpitToolsSyncEvents.on('localChanged', () => {
+        logger.info('[Sync] Webview refreshAccounts');
+        hud.sendMessage({ type: 'refreshAccounts' });
+    });
+    
+    // WebSocket 连接成功后刷新账号树
+    cockpitToolsWs.on('connected', () => {
+        logger.info('[WS] 连接成功，刷新账号列表');
+        void accountsRefreshService.refresh({ reason: 'ws.connected' });
+    });
+    
+    // 监听数据变更事件
+    cockpitToolsWs.on('dataChanged', async (payload: { source?: string }) => {
+        const source = payload?.source ?? 'unknown';
+        logger.info('[WS] 收到数据变更通知，开始同步');
+        await accountsRefreshService.refresh({ forceSync: true, reason: `dataChanged:${source}` });
+        // 通知 Webview 刷新账号数据
+        hud.sendMessage({ type: 'refreshAccounts' });
+    });
+    
+    cockpitToolsWs.on('accountSwitched', async (payload: { email: string }) => {
+        logger.info(`[WS] 账号已切换: ${payload.email}`);
+        
+        // 同步本地 Active Account 状态，跳过通知 Tools
+        await credentialStorage.setActiveAccount(payload.email, true);
+
+        await accountsRefreshService.refresh({ reason: 'ws.accountSwitched' });
+        // 通知 Webview 刷新
+        hud.sendMessage({ type: 'accountSwitched', email: payload.email });
+        vscode.window.showInformationMessage(t('ws.accountSwitched', { email: payload.email }));
+    });
+    
+    cockpitToolsWs.on('switchError', (payload: { message: string }) => {
+        vscode.window.showErrorMessage(t('ws.switchFailed', { message: payload.message }));
+    });
+
+    cockpitToolsWs.on('languageChanged', async (payload: { language: string; source?: string }) => {
+        const language = payload?.language;
+        if (!language) {
+            return;
+        }
+        if (payload?.source === 'extension') {
+            return;
+        }
+        const normalizedLanguage = normalizeLocaleInput(language);
+        const currentLanguage = normalizeLocaleInput(configService.getConfig().language);
+        if (currentLanguage === normalizedLanguage) {
+            return;
+        }
+
+        logger.info(`[WS] 语言已同步: ${normalizedLanguage}`);
+        await configService.updateConfig('language', normalizedLanguage);
+        const localeChanged = i18n.applyLanguageSetting(normalizedLanguage);
+        if (localeChanged) {
+            hud.dispose();
+            setTimeout(() => {
+                vscode.commands.executeCommand('agCockpit.open');
+            }, 100);
+        }
+    });
+
+    cockpitToolsWs.on('wakeupOverride', async (payload: { enabled: boolean }) => {
+        if (!payload?.enabled) {
+            return;
+        }
+        try {
+            const state = await autoTriggerController.getState();
+            await autoTriggerController.saveSchedule({
+                ...state.schedule,
+                enabled: false,
+                wakeOnReset: false,
+            });
+            vscode.window.showInformationMessage(t('ws.wakeupOverride'));
+        } catch (err) {
+            logger.warn(`[WS] 关闭插件唤醒失败: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    });
 
     // 监听配置变化
     context.subscriptions.push(
@@ -292,6 +436,9 @@ function handleOfflineState(): void {
  */
 export async function deactivate(): Promise<void> {
     logger.info('Antigravity Cockpit: Shutting down...');
+
+    // 断开 WebSocket 连接
+    cockpitToolsWs.disconnect();
 
     // 刷新待发送的错误事件
     await flushEvents();

@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { CockpitHUD } from '../view/hud';
 import { QuickPickView } from '../view/quickpick_view';
 import { ReactorCore } from '../engine/reactor';
+import { triggerService } from '../auto_trigger/trigger_service';
 import { configService } from '../shared/config_service';
 import { logger } from '../shared/log_service';
 import { t } from '../shared/i18n';
@@ -52,6 +53,19 @@ export class CommandController {
             vscode.commands.registerCommand('agCockpit.refresh', () => {
                 this.reactor.syncTelemetry();
                 vscode.window.showInformationMessage(t('notify.refreshing'));
+            }),
+        );
+
+        // 强制刷新模型缓存
+        this.context.subscriptions.push(
+            vscode.commands.registerCommand('agCockpit.refreshModelCache', async () => {
+                try {
+                    const models = await triggerService.refreshAvailableModelsCache();
+                    vscode.window.showInformationMessage(`Model list cache refreshed (${models.length}).`);
+                } catch (error) {
+                    const err = error instanceof Error ? error : new Error(String(error));
+                    vscode.window.showErrorMessage(`Failed to refresh model list cache: ${err.message}`);
+                }
             }),
         );
 

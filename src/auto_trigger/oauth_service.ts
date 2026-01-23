@@ -27,19 +27,27 @@ const AUTH_URL = 'https://accounts.google.com/o/oauth2/auth';
 const USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
 // 回调服务器配置
-const CALLBACK_HOST = 'localhost';
+const CALLBACK_HOST_IPV4 = '127.0.0.1';
+const CALLBACK_HOST_IPV6 = '::1';
 const CALLBACK_PORT_START = 11451;
 const CALLBACK_PORT_RANGE = 100;
+const OAUTH_HTTP_TIMEOUT_MS = 15000;
 
 /**
  * OAuth 服务类
  */
 class OAuthService {
     private callbackServer?: http.Server;
+    private callbackBaseUrl: string = `http://${CALLBACK_HOST_IPV4}`;
     private pendingAuth?: {
         state: string;
         resolve: (code: string) => void;
         reject: (error: Error) => void;
+    };
+    private pendingAuthSession?: {
+        authUrl: string;
+        redirectUri: string;
+        promise: Promise<string>;
     };
 
     /**
@@ -50,17 +58,10 @@ class OAuthService {
         logger.info('[OAuthService] Starting authorization flow');
 
         try {
-            // 1. 找到可用端口并启动回调服务器
-            const port = await this.startCallbackServer();
-            const redirectUri = `http://${CALLBACK_HOST}:${port}`;
+            // 1. 生成授权 URL 并启动回调服务器
+            const authUrl = await this.prepareAuthorizationSession();
 
-            // 2. 生成状态码（防 CSRF）
-            const state = this.generateState();
-
-            // 3. 构建授权 URL
-            const authUrl = this.buildAuthUrl(redirectUri, state);
-
-            // 4. 打开浏览器
+            // 2. 打开浏览器
             const opened = await vscode.env.openExternal(vscode.Uri.parse(authUrl));
             if (!opened) {
                 logger.warn('[OAuthService] Failed to open browser, falling back to clipboard');
@@ -82,40 +83,13 @@ class OAuthService {
                 }
             });
 
-            // 6. 等待回调（最多等待 5 分钟）
-            const code = await this.waitForCallback(state, 5 * 60 * 1000);
-
-            // 7. 用 code 换取 token
-            const credential = await this.exchangeCodeForToken(code, redirectUri);
-
-            // 8. 获取用户信息
-            const email = await this.fetchUserEmail(credential.accessToken);
-            credential.email = email;
-
-            // 从自动导入黑名单中移除（用户主动授权的账户应该被允许自动导入）
-            await credentialStorage.removeFromAutoImportBlacklist(email);
-
-            // 9. Check for duplicate account
-            const isDuplicate = await credentialStorage.hasAccount(email);
-            if (isDuplicate) {
-                // Account exists - this is a re-authorization, update credentials
-                logger.info(`[OAuthService] Account ${email} exists, updating credentials`);
-                await credentialStorage.saveCredential(credential);
-                await credentialStorage.clearAccountInvalid(email);
-                vscode.window.showInformationMessage(t('oauth.reauthSuccess', { email }));
-                return true;
+            // 3. 等待回调并完成授权
+            const session = this.pendingAuthSession;
+            if (!session) {
+                throw new Error('OAuth session not initialized');
             }
-
-            // 10. 保存凭证 (new account)
-            const result = await credentialStorage.saveCredentialForAccount(email, credential);
-
-            // 11. 显示成功提示
-            if (result === 'added') {
-                vscode.window.showInformationMessage(t('oauth.authSuccess', { email }));
-            }
-
-            logger.info(`[OAuthService] Authorization successful: ${email}`);
-            return true;
+            const code = await session.promise;
+            return await this.finalizeAuthorization(code, session.redirectUri);
 
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
@@ -124,8 +98,57 @@ class OAuthService {
             return false;
 
         } finally {
-            this.stopCallbackServer();
+            this.cancelAuthorizationSession();
         }
+    }
+
+    /**
+     * 生成授权链接并启动回调服务器（不自动打开浏览器）
+     */
+    async prepareAuthorizationSession(): Promise<string> {
+        if (this.pendingAuthSession) {
+            return this.pendingAuthSession.authUrl;
+        }
+
+        const port = await this.startCallbackServer();
+        const redirectUri = `${this.callbackBaseUrl}:${port}`;
+        const state = this.generateState();
+        const authUrl = this.buildAuthUrl(redirectUri, state);
+        const promise = this.waitForCallback(state, 5 * 60 * 1000);
+        promise.catch(() => undefined);
+
+        this.pendingAuthSession = {
+            authUrl,
+            redirectUri,
+            promise,
+        };
+
+        return authUrl;
+    }
+
+    /**
+     * 等待回调并完成授权
+     */
+    async completeAuthorizationSession(): Promise<boolean> {
+        if (!this.pendingAuthSession) {
+            throw new Error('No pending OAuth session');
+        }
+
+        try {
+            const { promise, redirectUri } = this.pendingAuthSession;
+            const code = await promise;
+            return await this.finalizeAuthorization(code, redirectUri);
+        } finally {
+            this.cancelAuthorizationSession();
+        }
+    }
+
+    /**
+     * 取消正在进行的授权
+     */
+    cancelAuthorizationSession(): void {
+        this.cancelPendingAuth();
+        this.pendingAuthSession = undefined;
     }
 
     /**
@@ -192,12 +215,36 @@ class OAuthService {
     }
 
     /**
+     * 从已有 Token 数据构建凭证（不触发网络请求）
+     */
+    buildCredentialFromTokenData(params: {
+        accessToken: string;
+        refreshToken: string;
+        expiresAt: string;
+        email: string;
+        projectId?: string;
+        isInvalid?: boolean;
+    }): OAuthCredential {
+        return {
+            clientId: ANTIGRAVITY_CLIENT_ID,
+            clientSecret: ANTIGRAVITY_CLIENT_SECRET,
+            accessToken: params.accessToken,
+            refreshToken: params.refreshToken,
+            expiresAt: params.expiresAt,
+            projectId: params.projectId,
+            scopes: ANTIGRAVITY_SCOPES,
+            email: params.email,
+            isInvalid: params.isInvalid ?? false,
+        };
+    }
+
+    /**
      * 使用 refresh_token 直接构造完整 OAuth 凭证（无需用户交互）
      * 适用于从 Antigravity Tools 导入的 token
      */
     async buildCredentialFromRefreshToken(refreshToken: string, fallbackEmail?: string): Promise<OAuthCredential> {
         try {
-            const response = await fetch(TOKEN_URL, {
+            const response = await this.fetchWithTimeout(TOKEN_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
@@ -293,30 +340,50 @@ class OAuthService {
             let port = CALLBACK_PORT_START;
             let attempts = 0;
 
+            const tryListen = (host: string, onError: (err: NodeJS.ErrnoException) => void) => {
+                const server = http.createServer((req, res) => {
+                    this.handleCallback(req, res);
+                });
+
+                server.on('error', (err: NodeJS.ErrnoException) => {
+                    server.close();
+                    onError(err);
+                });
+
+                server.listen(port, host, () => {
+                    this.callbackServer = server;
+                    this.setCallbackHost(host);
+                    logger.info(`[OAuthService] Callback server started on ${host}:${port}`);
+                    resolve(port);
+                });
+            };
+
             const tryPort = () => {
                 if (attempts >= CALLBACK_PORT_RANGE) {
                     reject(new Error('No available port for OAuth callback'));
                     return;
                 }
 
-                const server = http.createServer((req, res) => {
-                    this.handleCallback(req, res);
-                });
-
-                server.on('error', (err: NodeJS.ErrnoException) => {
+                tryListen(CALLBACK_HOST_IPV4, (err) => {
                     if (err.code === 'EADDRINUSE') {
                         port++;
                         attempts++;
                         tryPort();
-                    } else {
-                        reject(err);
+                        return;
                     }
-                });
-
-                server.listen(port, CALLBACK_HOST, () => {
-                    this.callbackServer = server;
-                    logger.info(`[OAuthService] Callback server started on port ${port}`);
-                    resolve(port);
+                    if (err.code === 'EADDRNOTAVAIL' || err.code === 'EINVAL' || err.code === 'EACCES') {
+                        tryListen(CALLBACK_HOST_IPV6, (v6Err) => {
+                            if (v6Err.code === 'EADDRINUSE') {
+                                port++;
+                                attempts++;
+                                tryPort();
+                                return;
+                            }
+                            reject(v6Err);
+                        });
+                        return;
+                    }
+                    reject(err);
                 });
             };
 
@@ -339,7 +406,7 @@ class OAuthService {
      * 处理 OAuth 回调
      */
     private handleCallback(req: http.IncomingMessage, res: http.ServerResponse): void {
-        const url = new URL(req.url || '', `http://${CALLBACK_HOST}`);
+        const url = new URL(req.url || '', this.callbackBaseUrl);
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
         const error = url.searchParams.get('error');
@@ -402,6 +469,8 @@ class OAuthService {
                 if (this.pendingAuth && this.pendingAuth.state === state) {
                     this.pendingAuth.reject(new Error('Authorization timeout'));
                     this.pendingAuth = undefined;
+                    this.pendingAuthSession = undefined;
+                    this.stopCallbackServer();
                 }
             }, timeout);
         });
@@ -415,7 +484,42 @@ class OAuthService {
             this.pendingAuth.reject(new Error('Authorization cancelled by user'));
             this.pendingAuth = undefined;
         }
+        this.pendingAuthSession = undefined;
         this.stopCallbackServer();
+    }
+
+    /**
+     * 完成授权流程（换取 token、保存账号）
+     */
+    private async finalizeAuthorization(code: string, redirectUri: string): Promise<boolean> {
+        // 1. 用 code 换取 token
+        const credential = await this.exchangeCodeForToken(code, redirectUri);
+
+        // 2. 获取用户信息
+        const email = await this.fetchUserEmail(credential.accessToken);
+        credential.email = email;
+
+        // 3. Check for duplicate account
+        const isDuplicate = await credentialStorage.hasAccount(email);
+        if (isDuplicate) {
+            // Account exists - this is a re-authorization, update credentials
+            logger.info(`[OAuthService] Account ${email} exists, updating credentials`);
+            await credentialStorage.saveCredential(credential);
+            await credentialStorage.clearAccountInvalid(email);
+            vscode.window.showInformationMessage(t('oauth.reauthSuccess', { email }));
+            return true;
+        }
+
+        // 4. 保存凭证 (new account)
+        const result = await credentialStorage.saveCredentialForAccount(email, credential);
+
+        // 5. 显示成功提示
+        if (result === 'added') {
+            vscode.window.showInformationMessage(t('oauth.authSuccess', { email }));
+        }
+
+        logger.info(`[OAuthService] Authorization successful: ${email}`);
+        return true;
     }
 
     /**
@@ -428,6 +532,17 @@ class OAuthService {
             state += chars.charAt(Math.floor(Math.random() * chars.length));
         }
         return state;
+    }
+
+    private setCallbackHost(host: string): void {
+        this.callbackBaseUrl = this.formatCallbackBaseUrl(host);
+    }
+
+    private formatCallbackBaseUrl(host: string): string {
+        if (host.includes(':')) {
+            return `http://[${host}]`;
+        }
+        return `http://${host}`;
     }
 
     /**
@@ -451,7 +566,7 @@ class OAuthService {
      * 用 authorization code 换取 token
      */
     private async exchangeCodeForToken(code: string, redirectUri: string): Promise<OAuthCredential> {
-        const response = await fetch(TOKEN_URL, {
+        const response = await this.fetchWithTimeout(TOKEN_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -498,7 +613,7 @@ class OAuthService {
      * 获取用户邮箱
      */
     private async fetchUserEmail(accessToken: string): Promise<string> {
-        const response = await fetch(USERINFO_URL, {
+        const response = await this.fetchWithTimeout(USERINFO_URL, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
             },
@@ -520,7 +635,7 @@ class OAuthService {
         }
 
         try {
-            const response = await fetch(TOKEN_URL, {
+            const response = await this.fetchWithTimeout(TOKEN_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
@@ -575,7 +690,7 @@ class OAuthService {
         }
 
         try {
-            const response = await fetch(TOKEN_URL, {
+            const response = await this.fetchWithTimeout(TOKEN_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
@@ -616,6 +731,26 @@ class OAuthService {
             const err = error instanceof Error ? error : new Error(String(error));
             logger.error(`[OAuthService] Token refresh failed for ${email}: ${err.message}`);
             return { state: 'refresh_failed', error: err.message };
+        }
+    }
+
+    private async fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), OAUTH_HTTP_TIMEOUT_MS);
+
+        try {
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal,
+            });
+            return response;
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                throw new Error('请求超时');
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
         }
     }
 }

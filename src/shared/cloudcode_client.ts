@@ -74,7 +74,7 @@ const CLOUDCODE_METADATA = {
 };
 
 const USER_AGENT = 'antigravity';
-const DEFAULT_ATTEMPTS = 3;
+const DEFAULT_ATTEMPTS = 2;
 const BACKOFF_BASE_MS = 500;
 const BACKOFF_MAX_MS = 4000;
 const ONBOARD_ATTEMPTS = 5;
@@ -148,29 +148,13 @@ export class CloudCodeClient {
         accessToken: string,
         options?: CloudCodeRequestOptions,
     ): Promise<CloudCodeResponse<T>> {
-        let lastError: Error | undefined;
-        for (const baseUrl of CLOUDCODE_BASE_URLS) {
-            try {
-                const data = await this.requestStreamWithRetry<T>(baseUrl, path, body, accessToken, options);
-                return data;
-            } catch (error) {
-                if (error instanceof CloudCodeAuthError) {
-                    throw error;
-                }
-                lastError = error instanceof Error ? error : new Error(String(error));
-                const retryable = error instanceof CloudCodeRequestError ? error.retryable : true;
-                if (!retryable) {
-                    throw lastError;
-                }
-                if (baseUrl !== CLOUDCODE_BASE_URLS[CLOUDCODE_BASE_URLS.length - 1]) {
-                    logger.warn(
-                        `${this.formatLabel(options)} Stream request failed (${baseUrl}${path}), trying fallback: ${lastError.message}`,
-                    );
-                }
-            }
-        }
-
-        throw lastError || new CloudCodeRequestError('Cloud Code stream request failed');
+        return this.requestStreamWithRetry<T>(
+            CLOUDCODE_BASE_URLS,
+            path,
+            body,
+            accessToken,
+            options,
+        );
     }
 
     async requestJson<T>(
@@ -179,33 +163,17 @@ export class CloudCodeClient {
         accessToken: string,
         options?: CloudCodeRequestOptions,
     ): Promise<CloudCodeResponse<T>> {
-        let lastError: Error | undefined;
-        for (const baseUrl of CLOUDCODE_BASE_URLS) {
-            try {
-                const data = await this.requestWithRetry<T>(baseUrl, path, body, accessToken, options);
-                return data;
-            } catch (error) {
-                if (error instanceof CloudCodeAuthError) {
-                    throw error;
-                }
-                lastError = error instanceof Error ? error : new Error(String(error));
-                const retryable = error instanceof CloudCodeRequestError ? error.retryable : true;
-                if (!retryable) {
-                    throw lastError;
-                }
-                if (baseUrl !== CLOUDCODE_BASE_URLS[CLOUDCODE_BASE_URLS.length - 1]) {
-                    logger.warn(
-                        `${this.formatLabel(options)} Request failed (${baseUrl}${path}), trying fallback: ${lastError.message}`,
-                    );
-                }
-            }
-        }
-
-        throw lastError || new CloudCodeRequestError('Cloud Code request failed');
+        return this.requestWithRetry<T>(
+            CLOUDCODE_BASE_URLS,
+            path,
+            body,
+            accessToken,
+            options,
+        );
     }
 
     private async requestStreamWithRetry<T>(
-        baseUrl: string,
+        baseUrls: readonly string[],
         path: string,
         body: object,
         accessToken: string,
@@ -214,24 +182,29 @@ export class CloudCodeClient {
         const maxAttempts = options?.maxAttempts ?? DEFAULT_ATTEMPTS;
         let lastError: Error | undefined;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                if (attempt > 1) {
-                    const delay = this.getBackoffDelay(attempt);
-                    logger.info(`${this.formatLabel(options)} Stream retry ${attempt}/${maxAttempts} in ${delay}ms`);
-                    await this.sleep(delay);
-                }
-                return await this.requestStreamOnce<T>(baseUrl, path, body, accessToken, options);
-            } catch (error) {
-                if (error instanceof CloudCodeAuthError) {
-                    throw error;
-                }
-                lastError = error instanceof Error ? error : new Error(String(error));
-                const retryable = error instanceof CloudCodeRequestError ? error.retryable : true;
-                if (!retryable) {
-                    throw lastError;
-                }
-                if (attempt === maxAttempts) {
-                    throw lastError;
+            if (attempt > 1) {
+                const delay = this.getBackoffDelay(attempt);
+                logger.info(`${this.formatLabel(options)} Stream retry round ${attempt}/${maxAttempts} in ${delay}ms`);
+                await this.sleep(delay);
+            }
+
+            for (const baseUrl of baseUrls) {
+                try {
+                    return await this.requestStreamOnce<T>(baseUrl, path, body, accessToken, options);
+                } catch (error) {
+                    if (error instanceof CloudCodeAuthError) {
+                        throw error;
+                    }
+                    lastError = error instanceof Error ? error : new Error(String(error));
+                    const retryable = error instanceof CloudCodeRequestError ? error.retryable : true;
+                    if (!retryable) {
+                        throw lastError;
+                    }
+                    if (baseUrl !== baseUrls[baseUrls.length - 1]) {
+                        logger.warn(
+                            `${this.formatLabel(options)} Stream request failed (${baseUrl}${path}), trying fallback: ${lastError.message}`,
+                        );
+                    }
                 }
             }
         }
@@ -240,7 +213,7 @@ export class CloudCodeClient {
     }
 
     private async requestWithRetry<T>(
-        baseUrl: string,
+        baseUrls: readonly string[],
         path: string,
         body: object,
         accessToken: string,
@@ -249,24 +222,29 @@ export class CloudCodeClient {
         const maxAttempts = options?.maxAttempts ?? DEFAULT_ATTEMPTS;
         let lastError: Error | undefined;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                if (attempt > 1) {
-                    const delay = this.getBackoffDelay(attempt);
-                    logger.info(`${this.formatLabel(options)} Retry ${attempt}/${maxAttempts} in ${delay}ms`);
-                    await this.sleep(delay);
-                }
-                return await this.requestOnce<T>(baseUrl, path, body, accessToken, options);
-            } catch (error) {
-                if (error instanceof CloudCodeAuthError) {
-                    throw error;
-                }
-                lastError = error instanceof Error ? error : new Error(String(error));
-                const retryable = error instanceof CloudCodeRequestError ? error.retryable : true;
-                if (!retryable) {
-                    throw lastError;
-                }
-                if (attempt === maxAttempts) {
-                    throw lastError;
+            if (attempt > 1) {
+                const delay = this.getBackoffDelay(attempt);
+                logger.info(`${this.formatLabel(options)} Retry round ${attempt}/${maxAttempts} in ${delay}ms`);
+                await this.sleep(delay);
+            }
+
+            for (const baseUrl of baseUrls) {
+                try {
+                    return await this.requestOnce<T>(baseUrl, path, body, accessToken, options);
+                } catch (error) {
+                    if (error instanceof CloudCodeAuthError) {
+                        throw error;
+                    }
+                    lastError = error instanceof Error ? error : new Error(String(error));
+                    const retryable = error instanceof CloudCodeRequestError ? error.retryable : true;
+                    if (!retryable) {
+                        throw lastError;
+                    }
+                    if (baseUrl !== baseUrls[baseUrls.length - 1]) {
+                        logger.warn(
+                            `${this.formatLabel(options)} Request failed (${baseUrl}${path}), trying fallback: ${lastError.message}`,
+                        );
+                    }
                 }
             }
         }

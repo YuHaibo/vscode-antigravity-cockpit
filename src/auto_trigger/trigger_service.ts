@@ -3,6 +3,9 @@
  * 触发服务：执行自动对话触发
  */
 
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import { oauthService, AccessTokenResult } from './oauth_service';
 import { credentialStorage } from './credential_storage';
 import { TriggerRecord, ModelInfo } from './types';
@@ -11,9 +14,24 @@ import { cloudCodeClient } from '../shared/cloudcode_client';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const RESET_TRIGGER_COOLDOWN_MS = 10 * 60 * 1000;
+const RESET_SAFETY_MARGIN_MS = 2 * 60 * 1000;  // 2 分钟安全边际，确保服务端已完成重置
 const MAX_TRIGGER_CONCURRENCY = 4;
 const DEFAULT_MAX_OUTPUT_TOKENS = 0;  // 0 means no limit
 const ANTIGRAVITY_SYSTEM_PROMPT = 'You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**';
+const AVAILABLE_MODELS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const AVAILABLE_MODELS_CACHE_VERSION = 1;
+const AVAILABLE_MODELS_CACHE_FILE = path.join(
+    os.homedir(),
+    '.antigravity_cockpit',
+    'cache',
+    'available_models.json',
+);
+
+interface AvailableModelsCache {
+    version: number;
+    updatedAt: number;
+    models: ModelInfo[];
+}
 
 /**
  * 触发服务
@@ -31,8 +49,6 @@ class TriggerService {
     private lastResetTriggerTimestamps: Map<string, string> = new Map();
     /** 记录每个模型上次触发时间（用于冷却） */
     private lastResetTriggerAt: Map<string, number> = new Map();
-    /** 记录每个模型上次 remaining，用于检测满额上升沿 */
-    private lastResetRemaining: Map<string, number> = new Map();
 
     /**
      * 初始化：从存储加载历史记录
@@ -41,6 +57,10 @@ class TriggerService {
         this.loadHistory();
         this.loadResetTriggerTimestamps();
         this.loadResetTriggerAt();
+    }
+
+    async refreshAvailableModelsCache(): Promise<ModelInfo[]> {
+        return this.fetchAvailableModels(undefined, { forceRefresh: true });
     }
     
     /**
@@ -81,6 +101,13 @@ class TriggerService {
     
     /**
      * 检查是否应该在配额重置时触发唤醒
+     * 
+     * 触发条件（全部满足）：
+     * 1. 满额：remaining >= limit
+     * 2. 时间边际：now >= lastResetAt + 2分钟（确保服务端已完成重置，避免滑动误触发）
+     * 3. 冷却：距上次触发 >= 10分钟
+     * 4. resetAt 变化：resetAt !== lastResetAt
+     * 
      * @param modelId 模型 ID
      * @param resetAt 当前的重置时间点 (ISO 8601)
      * @param remaining 当前剩余配额
@@ -88,55 +115,44 @@ class TriggerService {
      * @returns true 如果应该触发
      */
     shouldTriggerOnReset(modelId: string, resetAt: string, remaining: number, limit: number): boolean {
-        const lastRemaining = this.lastResetRemaining.get(modelId);
+        // 条件 1：满额检测
         const isFull = remaining >= limit;
-
-        // 只有满额时才考虑触发
         if (!isFull) {
-            this.lastResetRemaining.set(modelId, remaining);
             logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} not full (${remaining}/${limit})`);
             return false;
         }
 
+        const now = Date.now();
         const lastTriggeredResetAt = this.lastResetTriggerTimestamps.get(modelId);
         logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} lastTriggeredResetAt=${lastTriggeredResetAt}, current resetAt=${resetAt}`);
 
+        // 条件 2：时间边际检测
+        // 只有当上次记录的 resetAt 时间点 + 安全边际已过去，才认为是新周期
+        // 这可以防止 resetAt 滑动时的误触发，以及确保服务端已完成重置
+        if (lastTriggeredResetAt) {
+            const lastResetTime = new Date(lastTriggeredResetAt).getTime();
+            const safeTime = lastResetTime + RESET_SAFETY_MARGIN_MS;
+            if (now < safeTime) {
+                const waitSec = Math.ceil((safeTime - now) / 1000);
+                logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} waiting for safety margin (${waitSec}s left)`);
+                return false;
+            }
+        }
+
+        // 条件 3：冷却检测
         const lastTriggerAt = this.lastResetTriggerAt.get(modelId);
-        if (lastTriggerAt !== undefined && Date.now() - lastTriggerAt < RESET_TRIGGER_COOLDOWN_MS) {
-            this.lastResetRemaining.set(modelId, remaining);
+        if (lastTriggerAt !== undefined && now - lastTriggerAt < RESET_TRIGGER_COOLDOWN_MS) {
             logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} cooldown active, skip`);
             return false;
         }
 
-        // 启动首次观察到满额时，允许补触发一次
-        if (lastRemaining === undefined) {
-            if (resetAt === lastTriggeredResetAt) {
-                this.lastResetRemaining.set(modelId, remaining);
-                logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} startup full but resetAt same, skip`);
-                return false;
-            }
-            this.lastResetRemaining.set(modelId, remaining);
-            logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} startup full, allow once`);
-            return true;
-        }
-
-        const wasBelowLimit = lastRemaining < limit;
-        const isRisingEdge = wasBelowLimit && isFull;
-        if (!isRisingEdge) {
-            this.lastResetRemaining.set(modelId, remaining);
-            logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} not rising edge (last=${lastRemaining}, current=${remaining})`);
-            return false;
-        }
-
-        // 如果 resetAt 变化了（新的重置周期），则应该触发
+        // 条件 4：resetAt 变化检测
         if (resetAt === lastTriggeredResetAt) {
-            this.lastResetRemaining.set(modelId, remaining);
             logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} resetAt same, skip`);
             return false;
         }
 
-        this.lastResetRemaining.set(modelId, remaining);
-        logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} resetAt changed, rising edge, should trigger`);
+        logger.debug(`[TriggerService] shouldTriggerOnReset: ${modelId} all conditions met, should trigger`);
         return true;
     }
     
@@ -412,7 +428,18 @@ class TriggerService {
      * 获取可用模型列表
      * @param filterByConstants 可选，配额中显示的模型常量列表，用于过滤
      */
-    async fetchAvailableModels(filterByConstants?: string[]): Promise<ModelInfo[]> {
+    async fetchAvailableModels(
+        filterByConstants?: string[],
+        options?: { forceRefresh?: boolean },
+    ): Promise<ModelInfo[]> {
+        const cached = !options?.forceRefresh ? await this.readAvailableModelsCache() : null;
+        if (cached && this.isCacheFresh(cached) && cached.models.length > 0) {
+            const filtered = this.filterModelsByConstants(cached.models, filterByConstants);
+            if (filtered.length > 0) {
+                logger.debug(`[TriggerService] Using cached available models: ${filtered.length}`);
+                return filtered;
+            }
+        }
         const tokenResult = await this.getAccessTokenResult();
         if (tokenResult.state !== 'ok' || !tokenResult.token) {
             logger.debug(`[TriggerService] fetchAvailableModels: No access token (${tokenResult.state}), skipping`);
@@ -430,6 +457,13 @@ class TriggerService {
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             logger.warn(`[TriggerService] fetchAvailableModels failed, returning empty: ${err.message}`);
+            if (cached?.models?.length) {
+                const filtered = this.filterModelsByConstants(cached.models, filterByConstants);
+                if (filtered.length > 0) {
+                    logger.debug('[TriggerService] Falling back to cached available models after failure');
+                    return filtered;
+                }
+            }
             return [];
         }
 
@@ -447,31 +481,75 @@ class TriggerService {
             modelConstant: info.model || '',
         }));
 
-        // 如果提供了过滤列表，按顺序返回匹配的模型
-        if (filterByConstants && filterByConstants.length > 0) {
-            // 建立 modelConstant -> ModelInfo 的映射
-            const modelMap = new Map<string, ModelInfo>();
-            for (const model of allModels) {
-                if (model.modelConstant) {
-                    modelMap.set(model.modelConstant, model);
-                }
-            }
-            
-            // 按照 filterByConstants 的顺序返回
-            const sorted: ModelInfo[] = [];
-            for (const constant of filterByConstants) {
-                const model = modelMap.get(constant);
-                if (model) {
-                    sorted.push(model);
-                }
-            }
-            
-            logger.debug(`[TriggerService] Filtered models (sorted): ${sorted.map(m => m.displayName).join(', ')}`);
-            return sorted;
+        if (allModels.length > 0) {
+            await this.writeAvailableModelsCache(allModels);
         }
+        const filtered = this.filterModelsByConstants(allModels, filterByConstants);
+        if (filterByConstants && filterByConstants.length > 0) {
+            logger.debug(`[TriggerService] Filtered models (sorted): ${filtered.map(m => m.displayName).join(', ')}`);
+        } else {
+            logger.debug(`[TriggerService] All available models: ${allModels.map(m => m.displayName).join(', ')}`);
+        }
+        return filtered;
+    }
 
-        logger.debug(`[TriggerService] All available models: ${allModels.map(m => m.displayName).join(', ')}`);
-        return allModels;
+    private async readAvailableModelsCache(): Promise<AvailableModelsCache | null> {
+        try {
+            const content = await fs.readFile(AVAILABLE_MODELS_CACHE_FILE, 'utf8');
+            const parsed = JSON.parse(content) as AvailableModelsCache;
+            if (!parsed || parsed.version !== AVAILABLE_MODELS_CACHE_VERSION) {
+                return null;
+            }
+            if (!Array.isArray(parsed.models)) {
+                return null;
+            }
+            return parsed;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    private async writeAvailableModelsCache(models: ModelInfo[]): Promise<void> {
+        try {
+            await fs.mkdir(path.dirname(AVAILABLE_MODELS_CACHE_FILE), { recursive: true });
+            const record: AvailableModelsCache = {
+                version: AVAILABLE_MODELS_CACHE_VERSION,
+                updatedAt: Date.now(),
+                models,
+            };
+            const tempPath = `${AVAILABLE_MODELS_CACHE_FILE}.tmp`;
+            await fs.writeFile(tempPath, JSON.stringify(record, null, 2), 'utf8');
+            await fs.rename(tempPath, AVAILABLE_MODELS_CACHE_FILE);
+        } catch (error) {
+            logger.debug(`[TriggerService] Failed to write available models cache: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    private isCacheFresh(cache: AvailableModelsCache): boolean {
+        if (!cache.updatedAt || !Number.isFinite(cache.updatedAt)) {
+            return false;
+        }
+        return Date.now() - cache.updatedAt < AVAILABLE_MODELS_CACHE_TTL_MS;
+    }
+
+    private filterModelsByConstants(models: ModelInfo[], filterByConstants?: string[]): ModelInfo[] {
+        if (!filterByConstants || filterByConstants.length === 0) {
+            return models;
+        }
+        const modelMap = new Map<string, ModelInfo>();
+        for (const model of models) {
+            if (model.modelConstant) {
+                modelMap.set(model.modelConstant, model);
+            }
+        }
+        const sorted: ModelInfo[] = [];
+        for (const constant of filterByConstants) {
+            const model = modelMap.get(constant);
+            if (model) {
+                sorted.push(model);
+            }
+        }
+        return sorted;
     }
 
     private buildTriggerRequestBody(
@@ -508,7 +586,7 @@ class TriggerService {
         };
     }
 
-    private parseStreamResult(result: { data: any; text: string }): {
+    private parseStreamResult(result: { data: unknown; text: string }): {
         reply: string;
         promptTokens?: number;
         completionTokens?: number;
@@ -524,9 +602,13 @@ class TriggerService {
         let traceId: string | undefined;
         let responseId: string | undefined;
 
-        const processObj = (obj: any) => {
-            const candidate = obj?.response?.candidates?.[0] || obj?.candidates?.[0];
-            const parts = candidate?.content?.parts;
+        const processObj = (obj: unknown) => {
+            const typedObj = obj as Record<string, unknown> | undefined;
+            const response = typedObj?.response as Record<string, unknown> | undefined;
+            const candidates = (response?.candidates || (typedObj as Record<string, unknown> | undefined)?.candidates) as Array<Record<string, unknown>> | undefined;
+            const candidate = candidates?.[0];
+            const content = candidate?.content as Record<string, unknown> | undefined;
+            const parts = content?.parts;
             if (Array.isArray(parts)) {
                 for (const part of parts) {
                     // Skip thinking content (thought summaries from Gemini thinking models)
@@ -540,14 +622,14 @@ class TriggerService {
                 }
             }
 
-            const usage = obj?.response?.usageMetadata || obj?.usageMetadata;
+            const usage = (response?.usageMetadata || typedObj?.usageMetadata) as Record<string, number> | undefined;
             if (usage) {
                 promptTokens ??= usage.promptTokenCount;
                 completionTokens ??= usage.candidatesTokenCount;
                 totalTokens ??= usage.totalTokenCount;
             }
-            traceId ??= obj?.traceId;
-            responseId ??= obj?.response?.responseId || obj?.responseId;
+            traceId ??= typedObj?.traceId as string | undefined;
+            responseId ??= (response?.responseId || typedObj?.responseId) as string | undefined;
         };
 
         for (const line of payloads) {
@@ -597,7 +679,7 @@ class TriggerService {
 
         const requestBody = this.buildTriggerRequestBody(projectId, requestId, sessionId, model, prompt, maxOutputTokens);
 
-        let result: { data: any; text: string; status: number };
+        let result: { data: unknown; text: string; status: number };
         try {
             result = await cloudCodeClient.requestStream(
                 '/v1internal:streamGenerateContent?alt=sse',

@@ -47,8 +47,8 @@
             const activeEmail = activeAccount || (hasAccounts ? accounts[0].email : null);
             const isAuthorized = authorization?.isAuthorized || hasAccounts;
 
-            // Common Buttons
-            const manageBtn = `<button class="quota-account-manage-btn" title="${t('autoTrigger.manageAccounts')}">${t('autoTrigger.manageAccounts')}</button>`;
+            // Common Buttons - 账号总览按钮
+            const overviewBtn = `<button class="quota-account-overview-btn" title="${t('accountsOverview.openBtn') || 'Accounts Overview'}">📊 ${t('accountsOverview.openBtn') || 'Accounts Overview'}</button>`;
 
             // Sync UI Elements
             let syncActionsHtml = '';
@@ -86,7 +86,7 @@
                         <span class="quota-auth-text">${t('autoTrigger.authorized')}</span>
                         <span class="quota-auth-email">${activeEmail}</span>
                         ${accountCountBadge}
-                        ${manageBtn}
+                        ${overviewBtn}
                         ${switchToClientBtn}
                     </div>
                     <div class="quota-auth-actions">
@@ -118,9 +118,9 @@
             container.querySelector('.quota-auth-info-clickable')?.addEventListener('click', () => {
                 this.openAccountManageModal();
             });
-            container.querySelector('.quota-account-manage-btn')?.addEventListener('click', (e) => {
+            container.querySelector('.quota-account-overview-btn')?.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.openAccountManageModal();
+                this.vscode.postMessage({ command: 'executeCommand', commandId: 'agCockpit.openAccountsOverview' });
             });
 
             // Authorize
@@ -167,8 +167,10 @@
                             <button class="close-btn" id="close-account-manage-modal">×</button>
                         </div>
                         <div class="modal-body" id="account-manage-body"></div>
-                        <div class="modal-footer">
-                            <button id="add-new-account-btn" class="at-btn at-btn-primary">➕ ${t('autoTrigger.addAccount') || 'Add Account'}</button>
+                        <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
+                            <button id="add-new-account-btn" class="at-btn at-btn-primary">
+                                ➕ ${t('autoTrigger.addAccount') || 'Add Account'}
+                            </button>
                         </div>
                     </div>
                 `);
@@ -205,6 +207,9 @@
                     isInvalid ? `<span class="account-manage-badge expired">${t('autoTrigger.tokenExpired')}</span>` : ''
                 ].join('');
 
+                // 切换登录按钮（所有账号都显示）
+                const switchLoginBtn = `<button class="at-btn at-btn-small at-btn-primary account-switch-login-btn" data-email="${acc.email}">${t('autoTrigger.switchLoginBtn') || '切换登录'}</button>`;
+
                 return `
                     <div class="account-manage-item ${isActive ? 'active' : ''} ${isInvalid ? 'expired' : ''}" data-email="${acc.email}">
                         <div class="account-manage-info">
@@ -213,14 +218,14 @@
                             ${badges}
                         </div>
                         <div class="account-manage-actions">
-                            <button class="at-btn at-btn-small at-btn-secondary account-reauth-btn" data-email="${acc.email}">${t('autoTrigger.reauthorizeBtn')}</button>
-                            <button class="at-btn at-btn-small at-btn-danger account-remove-btn" data-email="${acc.email}">${t('autoTrigger.revokeBtn')}</button>
+                            ${switchLoginBtn}
+                            <button class="at-btn at-btn-small at-btn-danger account-remove-btn" data-email="${acc.email}">${t('autoTrigger.deleteBtn') || '删除'}</button>
                         </div>
                     </div>
                 `;
             }).join('')}</div>`;
 
-            // Bind list items events
+            // 绑定点击整行切换查看配额
             body.querySelectorAll('.account-manage-item').forEach(item => {
                 item.addEventListener('click', (e) => {
                     if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
@@ -233,13 +238,18 @@
                 });
             });
 
-            body.querySelectorAll('.account-reauth-btn').forEach(btn =>
+            // 绑定切换登录按钮（需确认）
+            body.querySelectorAll('.account-switch-login-btn').forEach(btn =>
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    this.vscode.postMessage({ command: 'autoTrigger.reauthorizeAccount', email: btn.dataset.email });
+                    const email = btn.dataset.email;
+                    if (email) {
+                        this.showSwitchLoginConfirmModal(email);
+                    }
                 })
             );
 
+            // 绑定删除按钮
             body.querySelectorAll('.account-remove-btn').forEach(btn =>
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -250,6 +260,50 @@
                     }
                 })
             );
+        }
+
+        /**
+         * 显示切换登录确认弹窗
+         */
+        showSwitchLoginConfirmModal(email) {
+            let modal = document.getElementById('switch-login-confirm-modal');
+            if (!modal) {
+                modal = this._createModal('switch-login-confirm-modal', `
+                    <div class="modal-content" style="max-width: 400px;">
+                        <div class="modal-header">
+                            <h3>${t('autoTrigger.switchLoginTitle') || '切换登录账户'}</h3>
+                            <button class="close-btn" id="switch-login-confirm-close">×</button>
+                        </div>
+                        <div class="modal-body" style="padding: 20px;">
+                            <p style="margin-bottom: 10px;">${t('autoTrigger.switchLoginConfirmText') || '确定要切换到以下账户吗？'}</p>
+                            <p style="font-weight: bold; color: var(--accent-color); margin-bottom: 15px;" id="switch-login-target-email"></p>
+                            <p style="color: var(--warning-color); font-size: 0.9em;">⚠️ ${t('autoTrigger.switchLoginWarning') || '此操作将重启 Antigravity 客户端以完成账户切换。'}</p>
+                        </div>
+                        <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding: 15px 20px;">
+                            <button class="at-btn at-btn-secondary" id="switch-login-confirm-cancel">${t('common.cancel') || '取消'}</button>
+                            <button class="at-btn at-btn-primary" id="switch-login-confirm-ok">${t('common.confirm') || '确认'}</button>
+                        </div>
+                    </div>
+                `);
+
+                document.getElementById('switch-login-confirm-close')?.addEventListener('click', () => modal.classList.add('hidden'));
+                document.getElementById('switch-login-confirm-cancel')?.addEventListener('click', () => modal.classList.add('hidden'));
+            }
+
+            // 设置目标邮箱
+            document.getElementById('switch-login-target-email').textContent = email;
+
+            // 绑定确认按钮（替换以避免重复绑定）
+            const okBtn = document.getElementById('switch-login-confirm-ok');
+            const newOkBtn = okBtn.cloneNode(true);
+            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+            newOkBtn.addEventListener('click', () => {
+                modal.classList.add('hidden');
+                this.vscode.postMessage({ command: 'autoTrigger.switchLoginAccount', email });
+                document.getElementById('account-manage-modal')?.classList.add('hidden');
+            });
+
+            modal.classList.remove('hidden');
         }
 
         openSyncConfigModal() {

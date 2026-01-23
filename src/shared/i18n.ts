@@ -96,6 +96,27 @@ const localeMapping: Record<string, SupportedLocale> = {
     'vi-vn': 'vi',
 };
 
+/**
+ * 规范化外部传入的语言值
+ */
+export function normalizeLocaleInput(languageSetting: string): string {
+    const trimmed = languageSetting.trim().toLowerCase();
+    if (!trimmed) {
+        return languageSetting;
+    }
+    if (trimmed === 'auto') {
+        return 'auto';
+    }
+    if (localeMapping[trimmed]) {
+        return localeMapping[trimmed];
+    }
+    const prefix = trimmed.split('-')[0];
+    if (localeMapping[prefix]) {
+        return localeMapping[prefix];
+    }
+    return trimmed;
+}
+
 /** i18n 服务类 */
 class I18nService {
     private currentLocale: SupportedLocale = 'en';

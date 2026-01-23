@@ -203,36 +203,86 @@ export class StatusBarController {
         const planInfo = snapshot.userInfo?.tier ? ` | ${snapshot.userInfo.tier}` : '';
         md.appendMarkdown(`**🚀 ${t('dashboard.title')}${planInfo}**\n\n`);
 
-        // 排序逻辑与仪表盘保持一致
-        const sortedModels = [...snapshot.models];
-        if (config.modelOrder && config.modelOrder.length > 0) {
-            // 有自定义顺序时，按用户拖拽设置的顺序排序
-            const orderMap = new Map<string, number>();
-            config.modelOrder.forEach((id, index) => orderMap.set(id, index));
-            sortedModels.sort((a, b) => {
-                const idxA = orderMap.has(a.modelId) ? orderMap.get(a.modelId)! : 99999;
-                const idxB = orderMap.has(b.modelId) ? orderMap.get(b.modelId)! : 99999;
-                return idxA - idxB;
+        // 检查是否启用分组显示
+        if (config.groupingEnabled && snapshot.groups && snapshot.groups.length > 0) {
+            // 分组模式：显示分组及其包含的模型
+            const groups = [...snapshot.groups];
+
+            // 按照用户自定义的分组顺序排序
+            if (config.groupOrder && config.groupOrder.length > 0) {
+                const orderMap = new Map<string, number>();
+                config.groupOrder.forEach((id, index) => orderMap.set(id, index));
+                groups.sort((a, b) => {
+                    const idxA = orderMap.has(a.groupId) ? orderMap.get(a.groupId)! : 99999;
+                    const idxB = orderMap.has(b.groupId) ? orderMap.get(b.groupId)! : 99999;
+                    if (idxA !== idxB) { return idxA - idxB; }
+                    return a.remainingPercentage - b.remainingPercentage;
+                });
+            }
+
+            // 标题和第一个分组之间添加分隔线
+            md.appendMarkdown('---\n\n');
+
+            // 构建统一的三列表格（保持完美对齐）
+            md.appendMarkdown('| | | |\n');
+            md.appendMarkdown('| :--- | :--- | :--- |\n');
+
+            // 遍历每个分组
+            groups.forEach((group, groupIndex) => {
+                // 分组标题行
+                md.appendMarkdown(`| **${group.groupName}** | | |\n`);
+
+                // 组内模型列表
+                if (group.models && group.models.length > 0) {
+                    group.models.forEach(model => {
+                        const modelPct = model.remainingPercentage ?? (group.remainingPercentage ?? 0);
+                        const modelIcon = this.getStatusIcon(modelPct, config);
+                        const bar = this.generateCompactProgressBar(modelPct);
+                        const resetTime = model.timeUntilResetFormatted || group.timeUntilResetFormatted || '-';
+                        const localTime = (model.resetTimeDisplay || group.resetTimeDisplay)?.split(' ')[1] || '';
+                        const resetDisplay = localTime ? `${resetTime} (${localTime})` : resetTime;
+                        const displayName = config.modelCustomNames?.[model.modelId] || model.label;
+                        const pctDisplay = (Math.floor(modelPct * 100) / 100).toFixed(2);
+                        
+                        // 绿点和模型名一起缩进
+                        md.appendMarkdown(`| &nbsp;&nbsp;&nbsp;&nbsp;${modelIcon} **${displayName}** | \`${bar}\` | ${pctDisplay}% → ${resetDisplay} |\n`);
+                    });
+                }
+
+                // 分组之间添加分隔线行
+                if (groupIndex < groups.length - 1) {
+                    md.appendMarkdown('| | | |\n');
+                }
             });
-        }
-        // 没有自定义顺序时，保持 API 返回的原始顺序
+            
+            md.appendMarkdown('\n');
+        } else {
+            // 非分组模式：平铺显示所有模型
+            const sortedModels = [...snapshot.models];
+            if (config.modelOrder && config.modelOrder.length > 0) {
+                const orderMap = new Map<string, number>();
+                config.modelOrder.forEach((id, index) => orderMap.set(id, index));
+                sortedModels.sort((a, b) => {
+                    const idxA = orderMap.has(a.modelId) ? orderMap.get(a.modelId)! : 99999;
+                    const idxB = orderMap.has(b.modelId) ? orderMap.get(b.modelId)! : 99999;
+                    return idxA - idxB;
+                });
+            }
 
-        // 构建 Markdown 表格
-        md.appendMarkdown('| | | |\n');
-        md.appendMarkdown('| :--- | :--- | :--- |\n');
+            md.appendMarkdown(' | | | |\n');
+            md.appendMarkdown('| :--- | :--- | :--- |\n');
 
-        for (const model of sortedModels) {
-            const pct = model.remainingPercentage ?? 0;
-            const icon = this.getStatusIcon(pct, config);
-            const bar = this.generateCompactProgressBar(pct);
-            const resetTime = model.timeUntilResetFormatted || '-';
-            // 添加本地时间显示，只取时间部分（如 18:45）
-            const localTime = model.resetTimeDisplay?.split(' ')[1] || '';
-            const resetDisplay = localTime ? `${resetTime} (${localTime})` : resetTime;
-
-            // 使用完整模型名称
-            const pctDisplay = (Math.floor(pct * 100) / 100).toFixed(2);
-            md.appendMarkdown(`| ${icon} **${model.label}** | \`${bar}\` | ${pctDisplay}% → ${resetDisplay} |\n`);
+            for (const model of sortedModels) {
+                const pct = model.remainingPercentage ?? 0;
+                const icon = this.getStatusIcon(pct, config);
+                const bar = this.generateCompactProgressBar(pct);
+                const resetTime = model.timeUntilResetFormatted || '-';
+                const localTime = model.resetTimeDisplay?.split(' ')[1] || '';
+                const resetDisplay = localTime ? `${resetTime} (${localTime})` : resetTime;
+                const displayName = config.modelCustomNames?.[model.modelId] || model.label;
+                const pctDisplay = (Math.floor(pct * 100) / 100).toFixed(2);
+                md.appendMarkdown(`| ${icon} **${displayName}** | \`${bar}\` | ${pctDisplay}% → ${resetDisplay} |\n`);
+            }
         }
 
         // 自动唤醒下次触发时间

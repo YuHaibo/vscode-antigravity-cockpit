@@ -7,6 +7,9 @@
  */
 
 import * as vscode from 'vscode';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs';
 import { OAuthCredential, AuthorizationStatus, AccountInfo } from './types';
 import { logger } from '../shared/log_service';
 
@@ -17,8 +20,8 @@ const LEGACY_CREDENTIAL_KEY = 'antigravity.autoTrigger.credential';
 const CREDENTIALS_KEY = 'antigravity.autoTrigger.credentials';
 const ACTIVE_ACCOUNT_KEY = 'antigravity.autoTrigger.activeAccount';
 const STATE_KEY = 'antigravity.autoTrigger.state';
-// 禁止自动导入的账户黑名单（用户主动删除的账户不应该被自动重新导入）
-const AUTO_IMPORT_BLACKLIST_KEY = 'antigravity.autoTrigger.autoImportBlacklist';
+// Cockpit Tools 账号快照（用于双向同步判定）
+const TOOLS_ACCOUNT_SNAPSHOT_KEY = 'antigravity.autoTrigger.toolsAccountSnapshot';
 
 /**
  * Multi-account credentials storage format
@@ -52,6 +55,28 @@ class CredentialStorage {
         this.migrationTask = this.migrateFromLegacy().catch(err => {
             logger.error(`[CredentialStorage] Migration failed: ${err.message}`);
         });
+        
+        // 初始化完成后同步到共享文件（供 Cockpit Tools 读取）
+        this.syncExistingCredentials();
+        
+        // 从共享目录读取当前账号，自动设置为活动账号
+        this.syncActiveAccountFromShared();
+    }
+    
+    /**
+     * 同步现有凭据到共享文件
+     */
+    private async syncExistingCredentials(): Promise<void> {
+        try {
+            await this.ensureMigrated();
+            const storage = await this.getCredentialsStorage();
+            if (Object.keys(storage.accounts).length > 0) {
+                await this.syncToSharedFile(storage);
+                logger.info('[CredentialStorage] Synced existing credentials to shared file');
+            }
+        } catch (error) {
+            // 忽略同步错误
+        }
     }
 
     /**
@@ -95,16 +120,226 @@ class CredentialStorage {
     /**
      * Save all credentials storage
      */
-    private async saveCredentialsStorage(storage: CredentialsStorage): Promise<void> {
+    private async saveCredentialsStorage(
+        storage: CredentialsStorage,
+        options?: { skipNotifyTools?: boolean },
+    ): Promise<void> {
         this.ensureInitialized();
         try {
             const json = JSON.stringify(storage);
             await this.secretStorage!.store(CREDENTIALS_KEY, json);
             logger.info('[CredentialStorage] Credentials storage saved');
+            
+            // 同步到共享文件供 Cockpit Tools 读取
+            await this.syncToSharedFile(storage);
+            
+            // 通过 WebSocket 通知 Cockpit Tools 数据已变更
+            if (!options?.skipNotifyTools) {
+                this.notifyDataChanged();
+            }
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             logger.error(`[CredentialStorage] Failed to save credentials storage: ${err.message}`);
             throw err;
+        }
+    }
+    
+    /**
+     * 通知 Cockpit Tools 数据已变更
+     */
+    private notifyDataChanged(): void {
+        try {
+            // 延迟导入避免循环依赖
+            import('../services/cockpitToolsWs').then(({ cockpitToolsWs }) => {
+                if (cockpitToolsWs.isConnected) {
+                    cockpitToolsWs.notifyDataChanged('extension_credential_updated');
+                }
+            }).catch(() => {
+                // 忽略导入错误
+            });
+        } catch {
+            // 忽略错误
+        }
+    }
+    
+    /**
+     * 同步账号到 Cockpit Tools（添加/更新）
+     */
+    private syncAccountToCockpitTools(email: string, credential: OAuthCredential): void {
+        try {
+            import('../services/cockpitToolsWs').then(({ cockpitToolsWs }) => {
+                if (cockpitToolsWs.isConnected) {
+                    const expiresAtMs = credential.expiresAt ? Date.parse(credential.expiresAt) : NaN;
+                    const expiresAt = Number.isNaN(expiresAtMs) ? undefined : Math.floor(expiresAtMs / 1000);
+                    cockpitToolsWs.addAccount(
+                        email,
+                        credential.refreshToken,
+                        credential.accessToken,
+                        expiresAt,
+                    ).then(result => {
+                        if (result.success) {
+                            logger.info(`[CredentialStorage] 账号已同步到 Cockpit Tools: ${email}`);
+                        } else {
+                            logger.warn(`[CredentialStorage] 同步账号到 Cockpit Tools 失败: ${result.message}`);
+                        }
+                    }).catch(() => {
+                        // 忽略错误
+                    });
+                }
+            }).catch(() => {
+                // 忽略导入错误
+            });
+        } catch {
+            // 忽略错误
+        }
+    }
+    
+    /**
+     * 从 Cockpit Tools 删除账号
+     */
+    private deleteAccountFromCockpitTools(email: string): void {
+        try {
+            import('../services/cockpitToolsWs').then(({ cockpitToolsWs }) => {
+                if (cockpitToolsWs.isConnected) {
+                    cockpitToolsWs.deleteAccountByEmail(email).then(result => {
+                        if (result.success) {
+                            logger.info(`[CredentialStorage] 已通知 Cockpit Tools 删除账号: ${email}`);
+                        } else {
+                            logger.warn(`[CredentialStorage] 通知 Cockpit Tools 删除账号失败: ${result.message}`);
+                        }
+                    }).catch(() => {
+                        // 忽略错误
+                    });
+                }
+            }).catch(() => {
+                // 忽略导入错误
+            });
+        } catch {
+            // 忽略错误
+        }
+    }
+    
+    /**
+     * 通知 Cockpit Tools 切换账号 (暂时禁用，仅查看模式)
+     */
+    /*
+    private syncSwitchToCockpitTools(email: string): void {
+        try {
+            import('../services/cockpitToolsWs').then(async ({ cockpitToolsWs }) => {
+                if (!cockpitToolsWs.isConnected) { return; }
+                
+                // 需要先获取账号列表找到对应的 ID
+                const resp = await cockpitToolsWs.getAccounts();
+                const account = resp.accounts.find(a => a.email === email);
+                
+                if (account && account.id) {
+                    cockpitToolsWs.switchAccount(account.id);
+                    logger.info(`[CredentialStorage] 已通知 Cockpit Tools 切换至账号: ${email}`);
+                }
+            }).catch(() => {
+                // 忽略错误
+            });
+        } catch {
+            // 忽略错误
+        }
+    }
+    */
+    
+    /**
+     * 从共享目录读取当前账号，自动设置为活动账号
+     */
+    private async syncActiveAccountFromShared(): Promise<void> {
+        try {
+            await this.ensureMigrated();
+            
+            const sharedDir = this.getSharedDir();
+            const currentAccountFile = path.join(sharedDir, 'current_account.json');
+            
+            if (!fs.existsSync(currentAccountFile)) {
+                logger.info('[CredentialStorage] No current_account.json found in shared dir');
+                return;
+            }
+            
+            const content = fs.readFileSync(currentAccountFile, 'utf-8');
+            const data = JSON.parse(content) as { email: string; updated_at: number };
+            
+            if (!data.email) {
+                return;
+            }
+            
+            // 检查该账号是否存在
+            const hasAccount = await this.hasAccount(data.email);
+            if (!hasAccount) {
+                logger.info(`[CredentialStorage] Account ${data.email} from shared dir not found locally`);
+                return;
+            }
+            
+            // 检查是否已经是活动账号
+            const currentActive = await this.getActiveAccount();
+            if (currentActive === data.email) {
+                logger.info(`[CredentialStorage] Account ${data.email} is already active`);
+                return;
+            }
+            
+            // 设置为活动账号（不触发切换流程）
+            await this.setActiveAccount(data.email);
+            logger.info(`[CredentialStorage] Synced active account from shared dir: ${data.email}`);
+        } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.warn(`[CredentialStorage] Failed to sync active account from shared: ${err.message}`);
+        }
+    }
+    
+    /**
+     * 获取共享目录路径（供 Cockpit Tools 读取）
+     */
+    private getSharedDir(): string {
+        return path.join(os.homedir(), '.antigravity_cockpit');
+    }
+    
+    /**
+     * 同步凭据到共享文件
+     * 供 Cockpit Tools 导入使用
+     */
+    private async syncToSharedFile(storage: CredentialsStorage): Promise<void> {
+        try {
+            const sharedDir = this.getSharedDir();
+            
+            // 确保目录存在
+            if (!fs.existsSync(sharedDir)) {
+                fs.mkdirSync(sharedDir, { recursive: true });
+            }
+            
+            const sharedFile = path.join(sharedDir, 'credentials.json');
+            
+            // 转换格式，只保存必要信息
+            const exportData: Record<string, {
+                email: string;
+                accessToken: string;
+                refreshToken: string;
+                expiresAt: string;
+                projectId?: string;
+            }> = {};
+            
+            for (const [email, cred] of Object.entries(storage.accounts)) {
+                // 跳过无效账号
+                if (cred.isInvalid) { continue; }
+                
+                exportData[email] = {
+                    email: cred.email || email,
+                    accessToken: cred.accessToken || '',
+                    refreshToken: cred.refreshToken || '',
+                    expiresAt: cred.expiresAt || '',
+                    projectId: cred.projectId,
+                };
+            }
+            
+            fs.writeFileSync(sharedFile, JSON.stringify({ accounts: exportData }, null, 2));
+            logger.debug('[CredentialStorage] Synced to shared file for Cockpit Tools');
+        } catch (error) {
+            // 同步失败不影响主流程
+            const err = error instanceof Error ? error : new Error(String(error));
+            logger.warn(`[CredentialStorage] Failed to sync to shared file: ${err.message}`);
         }
     }
 
@@ -120,7 +355,11 @@ class CredentialStorage {
      * Save credential for a specific account
      * @returns 'added' if new account, 'duplicate' if already exists
      */
-    async saveCredentialForAccount(email: string, credential: OAuthCredential): Promise<'added' | 'duplicate'> {
+    async saveCredentialForAccount(
+        email: string,
+        credential: OAuthCredential,
+        options?: { skipNotifyTools?: boolean },
+    ): Promise<'added' | 'duplicate'> {
         const storage = await this.getCredentialsStorage();
 
         // Check for duplicate
@@ -131,7 +370,7 @@ class CredentialStorage {
 
         // Add new account
         storage.accounts[email] = credential;
-        await this.saveCredentialsStorage(storage);
+        await this.saveCredentialsStorage(storage, options);
 
         // Set as active if it's the first account
         const accountCount = Object.keys(storage.accounts).length;
@@ -140,6 +379,12 @@ class CredentialStorage {
         }
 
         logger.info(`[CredentialStorage] Account ${email} added successfully`);
+        
+        // 同步到 Cockpit Tools
+        if (!options?.skipNotifyTools) {
+            this.syncAccountToCockpitTools(email, credential);
+        }
+        
         return 'added';
     }
 
@@ -163,7 +408,7 @@ class CredentialStorage {
     /**
      * Delete credential for a specific account
      */
-    async deleteCredentialForAccount(email: string): Promise<void> {
+    async deleteCredentialForAccount(email: string, _skipNotifyTools: boolean = false): Promise<void> {
         const storage = await this.getCredentialsStorage();
 
         if (!(email in storage.accounts)) {
@@ -172,10 +417,7 @@ class CredentialStorage {
         }
 
         delete storage.accounts[email];
-        await this.saveCredentialsStorage(storage);
-
-        // 将账户加入自动导入黑名单，防止刷新配额时自动重新导入
-        await this.addToAutoImportBlacklist(email);
+        await this.saveCredentialsStorage(storage, _skipNotifyTools ? { skipNotifyTools: true } : undefined);
 
         // If deleted account was active, set another as active
         const activeAccount = await this.getActiveAccount();
@@ -189,6 +431,36 @@ class CredentialStorage {
         }
 
         logger.info(`[CredentialStorage] Account ${email} deleted`);
+        
+        // 通知 Cockpit Tools 删除账号
+        if (!_skipNotifyTools) {
+            this.deleteAccountFromCockpitTools(email);
+        }
+    }
+
+    /**
+     * 与远程账号列表同步（删除本地多余的账号）
+     */
+    async syncWithRemoteAccountList(remoteEmails: string[]): Promise<void> {
+        await this.ensureMigrated();
+        const storage = await this.getCredentialsStorage();
+        const localEmails = Object.keys(storage.accounts);
+        const remoteEmailSet = new Set(remoteEmails);
+        
+        let changed = false;
+        
+        for (const email of localEmails) {
+            if (!remoteEmailSet.has(email)) {
+                logger.info(`[CredentialStorage] Syncing: Account ${email} not found in remote, deleting locally`);
+                // 调用删除，跳过通知 Tools (防止循环)
+                await this.deleteCredentialForAccount(email, true);
+                changed = true;
+            }
+        }
+        
+        if (changed) {
+            logger.info('[CredentialStorage] Synced with remote account list');
+        }
     }
 
     /**
@@ -215,68 +487,44 @@ class CredentialStorage {
         await this.markAccountInvalid(email, false);
     }
 
-    // ============ 自动导入黑名单管理 ============
+    // ============ 自动导入黑名单逻辑已移除 ============
 
     /**
-     * 将账户添加到自动导入黑名单
-     * 被加入黑名单的账户不会被 ensureLocalCredentialImported 自动重新导入
+     * 获取 Cockpit Tools 账号快照（用于同步判定）
      */
-    async addToAutoImportBlacklist(email: string): Promise<void> {
+    getToolsAccountSnapshot(): string[] {
         this.ensureInitialized();
-        const blacklist = this.globalState!.get<string[]>(AUTO_IMPORT_BLACKLIST_KEY, []);
-        const emailLower = email.toLowerCase();
-        if (!blacklist.some(e => e.toLowerCase() === emailLower)) {
-            blacklist.push(email);
-            await this.globalState!.update(AUTO_IMPORT_BLACKLIST_KEY, blacklist);
-            logger.info(`[CredentialStorage] Added ${email} to auto-import blacklist`);
-        }
+        return this.globalState!.get<string[]>(TOOLS_ACCOUNT_SNAPSHOT_KEY, []);
     }
 
     /**
-     * 从自动导入黑名单中移除账户
-     * 当用户手动重新添加/授权账户时调用
+     * 保存 Cockpit Tools 账号快照
      */
-    async removeFromAutoImportBlacklist(email: string): Promise<void> {
+    async setToolsAccountSnapshot(emails: string[]): Promise<void> {
         this.ensureInitialized();
-        const blacklist = this.globalState!.get<string[]>(AUTO_IMPORT_BLACKLIST_KEY, []);
-        const emailLower = email.toLowerCase();
-        const filtered = blacklist.filter(e => e.toLowerCase() !== emailLower);
-        if (filtered.length !== blacklist.length) {
-            await this.globalState!.update(AUTO_IMPORT_BLACKLIST_KEY, filtered);
-            logger.info(`[CredentialStorage] Removed ${email} from auto-import blacklist`);
-        }
-    }
-
-    /**
-     * 检查账户是否在自动导入黑名单中
-     */
-    isInAutoImportBlacklist(email: string): boolean {
-        this.ensureInitialized();
-        const blacklist = this.globalState!.get<string[]>(AUTO_IMPORT_BLACKLIST_KEY, []);
-        const emailLower = email.toLowerCase();
-        return blacklist.some(e => e.toLowerCase() === emailLower);
-    }
-
-    /**
-     * 清空自动导入黑名单
-     */
-    async clearAutoImportBlacklist(): Promise<void> {
-        this.ensureInitialized();
-        await this.globalState!.update(AUTO_IMPORT_BLACKLIST_KEY, []);
-        logger.info('[CredentialStorage] Auto-import blacklist cleared');
+        const unique = Array.from(new Set(emails));
+        await this.globalState!.update(TOOLS_ACCOUNT_SNAPSHOT_KEY, unique);
     }
 
     /**
      * Set the active account
      * Also syncs to legacy key for backward compatibility with older versions
      */
-    async setActiveAccount(email: string | null): Promise<void> {
+    async setActiveAccount(email: string | null, _skipNotifyTools: boolean = false): Promise<void> {
         this.ensureInitialized();
         await this.globalState!.update(ACTIVE_ACCOUNT_KEY, email);
         logger.info(`[CredentialStorage] Active account set to: ${email || 'none'}`);
 
         // Backward compatibility: sync to legacy key so older versions can read it
         await this.syncToLegacyKey(email);
+        
+        // REVERTED: 自动同步切换逻辑已回滚
+        // 现在的逻辑是：插件端切换账号仅为了查看配额，不改变客户端实际账户
+        /*
+        if (email && !skipNotifyTools) {
+            this.syncSwitchToCockpitTools(email);
+        }
+        */
     }
 
     /**
@@ -398,6 +646,9 @@ class CredentialStorage {
         }
 
         logger.info(`[CredentialStorage] Credential saved for ${credential.email}`);
+        
+        // 同步到 Cockpit Tools
+        this.syncAccountToCockpitTools(credential.email, credential);
     }
 
     /**

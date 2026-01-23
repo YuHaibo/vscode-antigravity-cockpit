@@ -105,31 +105,31 @@ class ConfigService {
         // quotaSource 使用 globalState 存储
         // 注意：不再回退到 config.get，只在迁移阶段读取一次旧配置，之后完全由 globalState 决定
         // 默认值设为 'local'
-        const quotaSourceResolved = this.getStateValue<string>(CONFIG_KEYS.QUOTA_SOURCE, 'local');
+        const quotaSourceResolved = this.getConfigStateValue<string>(CONFIG_KEYS.QUOTA_SOURCE, 'local');
         
         return {
             refreshInterval: config.get<number>(CONFIG_KEYS.REFRESH_INTERVAL, TIMING.DEFAULT_REFRESH_INTERVAL_MS / 1000),
             showPromptCredits: config.get<boolean>(CONFIG_KEYS.SHOW_PROMPT_CREDITS, false),
-            pinnedModels: this.getStateValue(CONFIG_KEYS.PINNED_MODELS, []),
-            modelOrder: this.getStateValue(CONFIG_KEYS.MODEL_ORDER, []),
-            modelCustomNames: this.getStateValue(CONFIG_KEYS.MODEL_CUSTOM_NAMES, {}),
-            visibleModels: this.getStateValue(CONFIG_KEYS.VISIBLE_MODELS, []),
+            pinnedModels: this.getConfigStateValue(CONFIG_KEYS.PINNED_MODELS, []),
+            modelOrder: this.getConfigStateValue(CONFIG_KEYS.MODEL_ORDER, []),
+            modelCustomNames: this.getConfigStateValue(CONFIG_KEYS.MODEL_CUSTOM_NAMES, {}),
+            visibleModels: this.getConfigStateValue(CONFIG_KEYS.VISIBLE_MODELS, []),
             logLevel: config.get<string>(CONFIG_KEYS.LOG_LEVEL, LOG_LEVELS.INFO),
             notificationEnabled: config.get<boolean>(CONFIG_KEYS.NOTIFICATION_ENABLED, true),
             statusBarFormat: config.get<string>(CONFIG_KEYS.STATUS_BAR_FORMAT, STATUS_BAR_FORMAT.STANDARD),
             groupingEnabled: config.get<boolean>(CONFIG_KEYS.GROUPING_ENABLED, true),
-            groupingCustomNames: this.getStateValue(CONFIG_KEYS.GROUPING_CUSTOM_NAMES, {}),
+            groupingCustomNames: this.getConfigStateValue(CONFIG_KEYS.GROUPING_CUSTOM_NAMES, {}),
             groupingShowInStatusBar: config.get<boolean>(CONFIG_KEYS.GROUPING_SHOW_IN_STATUS_BAR, true),
-            pinnedGroups: this.getStateValue(CONFIG_KEYS.PINNED_GROUPS, []),
-            groupOrder: this.getStateValue(CONFIG_KEYS.GROUP_ORDER, []),
-            groupMappings: this.getStateValue(CONFIG_KEYS.GROUP_MAPPINGS, {}),
+            pinnedGroups: this.getConfigStateValue(CONFIG_KEYS.PINNED_GROUPS, []),
+            groupOrder: this.getConfigStateValue(CONFIG_KEYS.GROUP_ORDER, []),
+            groupMappings: this.getConfigStateValue(CONFIG_KEYS.GROUP_MAPPINGS, {}),
             warningThreshold: config.get<number>(CONFIG_KEYS.WARNING_THRESHOLD, QUOTA_THRESHOLDS.WARNING_DEFAULT),
             criticalThreshold: config.get<number>(CONFIG_KEYS.CRITICAL_THRESHOLD, QUOTA_THRESHOLDS.CRITICAL_DEFAULT),
             quotaSource: quotaSourceResolved,
             displayMode: config.get<string>(CONFIG_KEYS.DISPLAY_MODE, DISPLAY_MODE.WEBVIEW),
             profileHidden: config.get<boolean>(CONFIG_KEYS.PROFILE_HIDDEN, true),
             dataMasked: config.get<boolean>(CONFIG_KEYS.DATA_MASKED, false),
-            language: this.getStateValue<string>(CONFIG_KEYS.LANGUAGE, 'auto'),
+            language: this.getConfigStateValue<string>(CONFIG_KEYS.LANGUAGE, 'auto'),
         };
     }
 
@@ -158,7 +158,32 @@ class ConfigService {
         await this.globalState.update(this.buildStateKey(key), value);
     }
 
-    private getStateValue<T>(configKey: string, fallbackValue: T): T {
+    /**
+     * 获取状态值（公开方法，用于存储任意状态数据）
+     */
+    getStateValue<T>(key: string, fallbackValue?: T): T | undefined {
+        if (this.globalState) {
+            const stateKey = this.buildStateKey(key);
+            const stored = this.globalState.get<T>(stateKey);
+            if (stored !== undefined) {
+                return stored;
+            }
+        }
+        return fallbackValue;
+    }
+
+    /**
+     * 设置状态值（公开方法，用于存储任意状态数据）
+     */
+    async setStateValue<T>(key: string, value: T): Promise<void> {
+        if (!this.globalState) {
+            return;
+        }
+        const stateKey = this.buildStateKey(key);
+        await this.globalState.update(stateKey, value);
+    }
+
+    private getConfigStateValue<T>(configKey: string, fallbackValue: T): T {
         if (this.globalState) {
             const stateKey = this.buildStateKey(configKey);
             const stored = this.globalState.get<T>(stateKey);
@@ -422,7 +447,7 @@ class ConfigService {
 
         let migrated = false;
         for (const item of migrations) {
-            const value = config.get(item.configKey as keyof CockpitConfig, item.defaultValue as any);
+            const value = config.get(item.configKey as keyof CockpitConfig, item.defaultValue as unknown);
             const hasValue = Array.isArray(value)
                 ? value.length > 0
                 : value && typeof value === 'object'

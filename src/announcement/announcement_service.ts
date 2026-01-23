@@ -98,6 +98,12 @@ class AnnouncementService {
      * 拉取公告（带缓存）
      */
     async fetchAnnouncements(): Promise<Announcement[]> {
+        // 初始化检查：防止在 context 设置之前调用
+        if (!this.initialized || !this.context) {
+            logger.warn('[AnnouncementService] Not initialized, returning cached or empty');
+            return this.filterAnnouncements(this.cachedAnnouncements);
+        }
+
         // 检查缓存是否有效
         const cached = this.context.globalState.get<{ time: number; data: Announcement[] }>(CACHE_KEY);
         if (cached && Date.now() - cached.time < CACHE_TTL) {
@@ -241,6 +247,16 @@ class AnnouncementService {
      * 获取公告状态（用于传递给 Webview）
      */
     async getState(): Promise<AnnouncementState> {
+        // 初始化检查：防止在 context 设置之前调用
+        if (!this.initialized || !this.context) {
+            logger.warn('[AnnouncementService] getState called before initialization');
+            return {
+                announcements: [],
+                unreadIds: [],
+                popupAnnouncement: null,
+            };
+        }
+
         const announcements = await this.fetchAnnouncements();
         const readIds = this.getReadIds();
         const unreadIds = announcements

@@ -68,12 +68,24 @@ async function build() {
         format: 'iife',
     });
 
+    // 2d. Bundle Accounts Overview Webview JS
+    const accountsOverviewContext = await esbuild.context({
+        entryPoints: ['./src/view/webview/accounts_overview.js'],
+        bundle: true,
+        outfile: './out/view/webview/accounts_overview.js',
+        minify: isProduction,
+        sourcemap: !isProduction,
+        target: 'es2020',
+        format: 'iife',
+    });
+
     if (isWatch) {
         await Promise.all([
             extensionContext.watch(),
             webviewContext.watch(),
             autoTriggerContext.watch(),
-            authUiContext.watch()
+            authUiContext.watch(),
+            accountsOverviewContext.watch(),
         ]);
         console.log('Watching for changes...');
     } else {
@@ -81,12 +93,14 @@ async function build() {
             extensionContext.rebuild(),
             webviewContext.rebuild(),
             autoTriggerContext.rebuild(),
-            authUiContext.rebuild()
+            authUiContext.rebuild(),
+            accountsOverviewContext.rebuild(),
         ]);
         await extensionContext.dispose();
         await webviewContext.dispose();
         await autoTriggerContext.dispose();
         await authUiContext.dispose();
+        await accountsOverviewContext.dispose();
         console.log('Build finished successfully.');
     }
 
@@ -96,7 +110,9 @@ async function build() {
         fs.mkdirSync(webviewDir, { recursive: true });
     }
     fs.copyFileSync('./src/view/webview/dashboard.css', './out/view/webview/dashboard.css');
+    fs.copyFileSync('./src/view/webview/shared_modals.css', './out/view/webview/shared_modals.css');
     fs.copyFileSync('./src/view/webview/auto_trigger.css', './out/view/webview/auto_trigger.css');
+    fs.copyFileSync('./src/view/webview/accounts_overview.css', './out/view/webview/accounts_overview.css');
 }
 
 build().catch(err => {

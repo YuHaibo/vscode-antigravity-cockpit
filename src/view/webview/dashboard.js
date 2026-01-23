@@ -769,9 +769,28 @@
             closeLocalAuthImportPrompt();
         }
 
+        // 处理导入进度消息
+        if (message.type === 'antigravityToolsSyncProgress') {
+            const { current, total, email } = message.data || {};
+            updateAntigravityToolsSyncProgress(current, total, email);
+        }
+
         // 处理导入完成消息
         if (message.type === 'antigravityToolsSyncComplete') {
             handleAntigravityToolsSyncComplete(message.data?.success, message.data?.error);
+        }
+        
+        // 处理 Cockpit Tools 数据同步消息
+        if (message.type === 'refreshAccounts') {
+            // Cockpit Tools 数据变更，刷新授权状态和账号列表
+            vscode.postMessage({ command: 'getAutoTriggerState' });
+            showToast(i18n['cockpitTools.dataChanged'] || '账号数据已更新', 'info');
+        }
+        
+        if (message.type === 'accountSwitched') {
+            // 账号切换完成
+            vscode.postMessage({ command: 'getAutoTriggerState' });
+            showToast((i18n['cockpitTools.accountSwitched'] || '已切换至 {email}').replace('{email}', message.email || ''), 'success');
         }
     }
 
@@ -1152,7 +1171,10 @@
                         </div>
                     </div>
                     <div class="modal-footer antigravityTools-sync-footer">
-                        <button id="antigravityTools-sync-ok" class="at-btn at-btn-primary">${i18n['common.gotIt']}</button>
+                        <button id="antigravityTools-sync-manual-import" class="at-btn at-btn-primary">
+                            ${i18n['antigravityToolsSync.manualImportBtn'] || '手动导入 JSON'}
+                        </button>
+                        <button id="antigravityTools-sync-ok" class="at-btn at-btn-secondary">${i18n['common.gotIt']}</button>
                     </div>
                 </div>
             `;
@@ -1163,6 +1185,10 @@
             });
             modal.querySelector('#antigravityTools-sync-ok')?.addEventListener('click', () => {
                 modal.classList.add('hidden');
+            });
+            modal.querySelector('#antigravityTools-sync-manual-import')?.addEventListener('click', () => {
+                modal.classList.add('hidden');
+                showAntigravityToolsJsonImportModal();
             });
             return;
         }
@@ -1324,6 +1350,267 @@
         }
     }
 
+    function showAntigravityToolsJsonImportModal() {
+        let modal = document.getElementById('antigravityTools-json-import-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'antigravityTools-json-import-modal';
+            modal.className = 'modal hidden';
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div class="modal-content antigravityTools-json-content">
+                <div class="modal-header antigravityTools-sync-header">
+                    <div class="antigravityTools-sync-title">
+                        <h3>${i18n['antigravityToolsSync.manualImportTitle'] || '手动导入 JSON'}</h3>
+                    </div>
+                    <button class="close-btn" id="antigravityTools-json-close">×</button>
+                </div>
+                <div class="modal-body antigravityTools-json-body">
+                    <div class="antigravityTools-sync-section">
+                        <p class="antigravityTools-sync-notice">
+                            ${i18n['antigravityToolsSync.manualImportDesc'] || '未检测到本地 Antigravity Tools 账户，可通过 JSON 文件或粘贴内容导入。'}
+                        </p>
+                    </div>
+                    <div class="at-json-import-panel">
+                        <div class="at-json-import-actions">
+                            <input type="file" id="antigravityTools-json-file-input" accept=".json,application/json" class="hidden">
+                            <button id="antigravityTools-json-file-btn" class="at-btn at-btn-secondary">
+                                ${i18n['antigravityToolsSync.manualImportFile'] || '选择 JSON 文件'}
+                            </button>
+                            <span class="at-json-import-file-name" id="antigravityTools-json-file-name">
+                                ${i18n['common.none'] || '未选择文件'}
+                            </span>
+                        </div>
+                        <textarea id="antigravityTools-json-textarea" class="at-json-import-textarea" spellcheck="false" placeholder='${i18n['antigravityToolsSync.manualImportPlaceholder'] || '粘贴 JSON 数组，例如: [{"email":"a@b.com","refresh_token":"..."}]'}'></textarea>
+                        <div class="at-json-import-status" id="antigravityTools-json-status"></div>
+                        <div class="antigravityTools-sync-chips at-json-import-preview" id="antigravityTools-json-preview"></div>
+                        <div class="antigravityTools-sync-note">
+                            ${i18n['antigravityToolsSync.manualImportHint'] || '内容仅在本地解析，不会上传。'}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer antigravityTools-sync-footer">
+                    <button id="antigravityTools-json-cancel" class="at-btn at-btn-secondary">${i18n['common.cancel']}</button>
+                    <button id="antigravityTools-json-import" class="at-btn at-btn-primary" disabled>
+                        ${i18n['autoTrigger.importOnly'] || '仅导入'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        modal.classList.remove('hidden');
+
+        const fileInput = modal.querySelector('#antigravityTools-json-file-input');
+        const fileBtn = modal.querySelector('#antigravityTools-json-file-btn');
+        const fileNameEl = modal.querySelector('#antigravityTools-json-file-name');
+        const textarea = modal.querySelector('#antigravityTools-json-textarea');
+        const statusEl = modal.querySelector('#antigravityTools-json-status');
+        const previewEl = modal.querySelector('#antigravityTools-json-preview');
+        const importBtn = modal.querySelector('#antigravityTools-json-import');
+        const closeBtn = modal.querySelector('#antigravityTools-json-close');
+        const cancelBtn = modal.querySelector('#antigravityTools-json-cancel');
+
+        let currentText = '';
+
+        function parseJson(text) {
+            const trimmed = (text || '').trim();
+            if (!trimmed) {
+                return { entries: [], invalid: 0, error: '' };
+            }
+
+            let data;
+            try {
+                data = JSON.parse(trimmed);
+            } catch {
+                return { entries: [], invalid: 0, error: i18n['antigravityToolsSync.manualImportJsonError'] || 'JSON 解析失败' };
+            }
+
+            if (!Array.isArray(data)) {
+                return { entries: [], invalid: 0, error: i18n['antigravityToolsSync.manualImportJsonArray'] || 'JSON must be an array' };
+            }
+
+            const entries = [];
+            let invalid = 0;
+            const seen = new Set();
+
+            for (const item of data) {
+                if (!item || typeof item !== 'object') {
+                    invalid += 1;
+                    continue;
+                }
+
+                const email = typeof item.email === 'string' ? item.email.trim() : '';
+                const refreshToken = typeof item.refresh_token === 'string'
+                    ? item.refresh_token.trim()
+                    : (typeof item.refreshToken === 'string' ? item.refreshToken.trim() : '');
+
+                if (!email || !refreshToken) {
+                    invalid += 1;
+                    continue;
+                }
+
+                const key = email.toLowerCase();
+                if (seen.has(key)) {
+                    invalid += 1;
+                    continue;
+                }
+
+                seen.add(key);
+                entries.push({ email, refreshToken });
+            }
+
+            return { entries, invalid, error: '' };
+        }
+
+        function updatePreview(entries, invalid, error) {
+            if (statusEl) {
+                statusEl.classList.toggle('is-error', Boolean(error));
+            }
+
+            if (error) {
+                if (statusEl) statusEl.textContent = error;
+                if (previewEl) previewEl.innerHTML = '';
+                if (importBtn) importBtn.disabled = true;
+                return;
+            }
+
+            if (entries.length === 0) {
+                if (statusEl) {
+                    statusEl.textContent = i18n['antigravityToolsSync.manualImportEmpty'] || '请粘贴或选择 JSON 文件';
+                }
+                if (previewEl) previewEl.innerHTML = '';
+                if (importBtn) importBtn.disabled = true;
+                return;
+            }
+
+            const invalidSuffix = invalid > 0
+                ? ` · ${(i18n['antigravityToolsSync.manualImportInvalid'] || '无效条目')} ${invalid}`
+                : '';
+            if (statusEl) {
+                statusEl.textContent = `${i18n['antigravityToolsSync.manualImportPreview'] || '将导入'} ${entries.length} ${i18n['antigravityToolsSync.manualImportCountSuffix'] || '个账号'}${invalidSuffix}`;
+            }
+
+            if (previewEl) {
+                const maxPreview = 6;
+                const chips = entries.slice(0, maxPreview).map(item => (
+                    `<span class="antigravityTools-sync-chip">${escapeHtml(item.email)}</span>`
+                ));
+                if (entries.length > maxPreview) {
+                    chips.push(`<span class="antigravityTools-sync-chip">+${entries.length - maxPreview}</span>`);
+                }
+                previewEl.innerHTML = chips.join('');
+            }
+
+            if (importBtn) importBtn.disabled = false;
+        }
+
+        function handleTextChange(text) {
+            currentText = text;
+            const result = parseJson(text);
+            updatePreview(result.entries, result.invalid, result.error);
+        }
+
+        fileBtn?.addEventListener('click', () => {
+            fileInput?.click();
+        });
+
+        fileInput?.addEventListener('change', async () => {
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) {
+                return;
+            }
+            const text = await file.text();
+            if (textarea) textarea.value = text;
+            if (fileNameEl) fileNameEl.textContent = file.name;
+            handleTextChange(text);
+        });
+
+        textarea?.addEventListener('input', (e) => {
+            if (fileNameEl) {
+                fileNameEl.textContent = i18n['antigravityToolsSync.manualImportPaste'] || '粘贴 JSON';
+            }
+            handleTextChange(e.target.value);
+        });
+
+        importBtn?.addEventListener('click', () => {
+            const result = parseJson(currentText);
+            if (result.error || result.entries.length === 0) {
+                showToast(result.error || (i18n['antigravityToolsSync.manualImportEmpty'] || '请提供有效 JSON'), 'warning');
+                return;
+            }
+            importBtn.disabled = true;
+            importBtn.textContent = i18n['autoTrigger.importing'] || 'Importing...';
+            vscode.postMessage({ command: 'antigravityToolsSync.importJson', jsonText: currentText });
+        });
+
+        closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+        cancelBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+
+        updatePreview([], 0, '');
+    }
+
+    /**
+     * 更新导入进度显示，并添加取消按钮
+     */
+    function updateAntigravityToolsSyncProgress(current, total, email) {
+        const cancelText = i18n['common.cancel'] || '取消';
+        const progressText = `${i18n['autoTrigger.importing'] || 'Importing...'} ${current}/${total}`;
+        
+        // 更新 antigravityTools-sync-modal 中的按钮
+        const syncModal = document.getElementById('antigravityTools-sync-modal');
+        if (syncModal) {
+            const importOnlyBtn = syncModal.querySelector('#antigravityTools-sync-import-only');
+            const importSwitchBtn = syncModal.querySelector('#antigravityTools-sync-import-switch');
+            const cancelBtn = syncModal.querySelector('#antigravityTools-sync-cancel');
+            
+            // 显示进度
+            if (importOnlyBtn && importOnlyBtn.disabled) {
+                importOnlyBtn.textContent = progressText;
+            }
+            if (importSwitchBtn && importSwitchBtn.disabled) {
+                importSwitchBtn.textContent = progressText;
+            }
+            
+            // 启用取消按钮
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+                cancelBtn.textContent = cancelText;
+                cancelBtn.onclick = () => {
+                    vscode.postMessage({ command: 'antigravityToolsSync.cancel' });
+                    cancelBtn.disabled = true;
+                    cancelBtn.textContent = i18n['common.cancelling'] || '取消中...';
+                };
+            }
+        }
+
+        // 更新 antigravityTools-json-import-modal 中的按钮
+        const jsonModal = document.getElementById('antigravityTools-json-import-modal');
+        if (jsonModal) {
+            const importBtn = jsonModal.querySelector('#antigravityTools-json-import');
+            const cancelBtn = jsonModal.querySelector('#antigravityTools-json-cancel');
+            
+            if (importBtn && importBtn.disabled) {
+                importBtn.textContent = progressText;
+            }
+            
+            // 启用取消按钮
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+                cancelBtn.textContent = cancelText;
+                cancelBtn.onclick = () => {
+                    vscode.postMessage({ command: 'antigravityToolsSync.cancel' });
+                    cancelBtn.disabled = true;
+                    cancelBtn.textContent = i18n['common.cancelling'] || '取消中...';
+                };
+            }
+        }
+
+        // 可选：在控制台输出进度日志
+        console.log(`[AntigravityToolsSync] Progress: ${current}/${total} - ${email}`);
+    }
+
     /**
      * 处理导入完成消息
      */
@@ -1331,6 +1618,10 @@
         const modal = document.getElementById('antigravityTools-sync-modal');
         if (modal) {
             modal.classList.add('hidden');
+        }
+        const jsonModal = document.getElementById('antigravityTools-json-import-modal');
+        if (jsonModal) {
+            jsonModal.classList.add('hidden');
         }
         // Toast 提示由后端的 vscode.window.showInformationMessage 处理
     }
@@ -1535,6 +1826,9 @@
             const invalidBadge = isInvalid ? `<span class="account-manage-badge expired">${i18n['autoTrigger.tokenExpired'] || 'Expired'}</span>` : '';
             const activeBadge = isActive && !isInvalid ? `<span class="account-manage-badge">${i18n['autoTrigger.accountActive'] || 'Active'}</span>` : '';
             
+            // 切换登录账户按钮（所有账号都显示）
+            const switchBtn = `<button class="at-btn at-btn-small at-btn-primary account-switch-login-btn" data-email="${acc.email}">${i18n['autoTrigger.switchLoginBtn'] || '切换登录'}</button>`;
+            
             return `
                 <div class="account-manage-item ${isActive ? 'active' : ''}${invalidClass}" data-email="${acc.email}">
                     <div class="account-manage-info">
@@ -1543,8 +1837,8 @@
                         ${activeBadge}${invalidBadge}
                     </div>
                     <div class="account-manage-actions">
-                        <button class="at-btn at-btn-small at-btn-secondary account-reauth-btn" data-email="${acc.email}">${i18n['autoTrigger.reauthorizeBtn'] || 'Reauthorize'}</button>
-                        <button class="at-btn at-btn-small at-btn-danger account-remove-btn" data-email="${acc.email}">${i18n['autoTrigger.revokeBtn'] || 'Revoke'}</button>
+                        ${switchBtn}
+                        <button class="at-btn at-btn-small at-btn-danger account-remove-btn" data-email="${acc.email}">${i18n['autoTrigger.deleteBtn'] || '删除'}</button>
                     </div>
                 </div>
             `;
@@ -1552,7 +1846,7 @@
 
         body.innerHTML = `<div class="account-manage-list">${listHtml}</div>`;
 
-        // 绑定点击整行切换账号
+        // 绑定点击整行切换查看配额
         body.querySelectorAll('.account-manage-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 // 如果点击的是按钮，则忽略（按钮已有阻止冒泡，但多一层判断更安全）
@@ -1569,16 +1863,18 @@
             });
         });
 
-        // 绑定重新授权按钮
-        body.querySelectorAll('.account-reauth-btn').forEach(btn => {
+        // 绑定切换登录账户按钮（需确认）
+        body.querySelectorAll('.account-switch-login-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const email = btn.dataset.email;
-                vscode.postMessage({ command: 'autoTrigger.reauthorizeAccount', email });
+                if (email) {
+                    showSwitchLoginConfirmModal(email);
+                }
             });
         });
 
-        // 绑定取消授权按钮
+        // 绑定删除按钮
         body.querySelectorAll('.account-remove-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1588,6 +1884,67 @@
                 }
             });
         });
+    }
+
+    /**
+     * 显示切换登录确认弹窗
+     */
+    function showSwitchLoginConfirmModal(email) {
+        // 创建确认弹窗
+        let modal = document.getElementById('switch-login-confirm-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'switch-login-confirm-modal';
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 400px;">
+                    <div class="modal-header">
+                        <h3>${i18n['autoTrigger.switchLoginTitle'] || '切换登录账户'}</h3>
+                        <button class="modal-close" id="switch-login-confirm-close">×</button>
+                    </div>
+                    <div class="modal-body" style="padding: 20px;">
+                        <p style="margin-bottom: 10px;">${i18n['autoTrigger.switchLoginConfirmText'] || '确定要切换到以下账户吗？'}</p>
+                        <p style="font-weight: bold; color: var(--accent-color); margin-bottom: 15px;" id="switch-login-target-email"></p>
+                        <p style="color: var(--warning-color); font-size: 0.9em;">⚠️ ${i18n['autoTrigger.switchLoginWarning'] || '此操作将重启 Antigravity 客户端以完成账户切换。'}</p>
+                    </div>
+                    <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding: 15px 20px;">
+                        <button class="at-btn at-btn-secondary" id="switch-login-confirm-cancel">${i18n['common.cancel'] || '取消'}</button>
+                        <button class="at-btn at-btn-primary" id="switch-login-confirm-ok">${i18n['common.confirm'] || '确认'}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // 绑定关闭按钮
+            document.getElementById('switch-login-confirm-close').addEventListener('click', () => {
+                modal.classList.add('hidden');
+            });
+            document.getElementById('switch-login-confirm-cancel').addEventListener('click', () => {
+                modal.classList.add('hidden');
+            });
+            // 点击遮罩关闭
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.add('hidden');
+                }
+            });
+        }
+
+        // 设置目标邮箱
+        document.getElementById('switch-login-target-email').textContent = email;
+
+        // 绑定确认按钮
+        const okBtn = document.getElementById('switch-login-confirm-ok');
+        const newOkBtn = okBtn.cloneNode(true);
+        okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+        newOkBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            // 发送切换登录账户的命令
+            vscode.postMessage({ command: 'autoTrigger.switchLoginAccount', email });
+            closeAccountManageModal();
+        });
+
+        modal.classList.remove('hidden');
     }
 
     function updateQuotaSourceInfo() {
@@ -2629,12 +2986,48 @@
     }
 
     function handleSmartGroup() {
-        // 使用现有的自动分组逻辑预填数据
+        // 使用固定分组配置（与桌面端一致）
         const models = customGroupingState.allModels;
         if (!models || models.length === 0) {
             showToast(i18n['customGrouping.noModels'] || 'No models available', 'info');
             return;
         }
+
+        // 固定分组配置（使用精确模型 ID）
+        const defaultGroups = [
+            {
+                id: 'claude_45',
+                name: 'Claude 4.5',
+                modelIds: [
+                    'MODEL_PLACEHOLDER_M12',           // Claude Opus 4.5 (Thinking)
+                    'MODEL_CLAUDE_4_5_SONNET',         // Claude Sonnet 4.5
+                    'MODEL_CLAUDE_4_5_SONNET_THINKING', // Claude Sonnet 4.5 (Thinking)
+                    'MODEL_OPENAI_GPT_OSS_120B_MEDIUM', // GPT-OSS 120B (Medium)
+                ]
+            },
+            {
+                id: 'g3_pro',
+                name: 'G3-Pro',
+                modelIds: [
+                    'MODEL_PLACEHOLDER_M7',  // Gemini 3 Pro (High)
+                    'MODEL_PLACEHOLDER_M8',  // Gemini 3 Pro (Low)
+                ]
+            },
+            {
+                id: 'g3_flash',
+                name: 'G3-Flash',
+                modelIds: [
+                    'MODEL_PLACEHOLDER_M18', // Gemini 3 Flash
+                ]
+            },
+            {
+                id: 'g3_image',
+                name: 'G3-Image',
+                modelIds: [
+                    'MODEL_PLACEHOLDER_M9',  // Gemini 3 Pro Image
+                ]
+            }
+        ];
 
         // 保存现有分组名称映射（modelId -> groupName）
         const existingGroupNames = {};
@@ -2644,74 +3037,55 @@
             }
         }
 
-        // 按配额签名分组
-        const signatureMap = new Map(); // signature -> modelIds
-        for (const model of models) {
-            const signature = `${(model.remainingPercentage || 0).toFixed(6)}_${model.resetTimeDisplay || ''}`;
-            if (!signatureMap.has(signature)) {
-                signatureMap.set(signature, []);
-            }
-            signatureMap.get(signature).push(model.modelId);
-        }
+        // 按固定分组分配模型
+        const groupMap = new Map(); // groupId -> { id, name, modelIds }
+        const matchedModels = new Set();
 
-        // 转换为分组结构
-        customGroupingState.groups = [];
-        let groupIndex = 1;
-        for (const [_signature, modelIds] of signatureMap) {
-            // 使用排序后的副本生成稳定的 groupId，保持 modelIds 原始顺序
-            const groupId = [...modelIds].sort().join('_');
-
-            // 尝试继承现有分组名称
-            // 优先使用组内模型之前的分组名称（按出现次数投票）
-            const nameVotes = {};
-            for (const modelId of modelIds) {
-                const existingName = existingGroupNames[modelId];
-                if (existingName) {
-                    nameVotes[existingName] = (nameVotes[existingName] || 0) + 1;
+        for (const defaultGroup of defaultGroups) {
+            const groupModels = [];
+            
+            for (const model of models) {
+                // 精确匹配模型 ID
+                if (defaultGroup.modelIds.includes(model.modelId)) {
+                    groupModels.push(model.modelId);
+                    matchedModels.add(model.modelId);
                 }
             }
 
-            // 找出投票最多的名称
-            let inheritedName = '';
-            let maxVotes = 0;
-            for (const [name, votes] of Object.entries(nameVotes)) {
-                if (votes > maxVotes) {
-                    maxVotes = votes;
-                    inheritedName = name;
-                }
-            }
-
-            // 如果没有继承名称，使用备选方案
-            let groupName = inheritedName;
-            if (!groupName) {
-                // 也尝试从 config 中读取
-                const configGroupNames = currentConfig.groupCustomNames || {};
-                for (const modelId of modelIds) {
-                    if (configGroupNames[modelId]) {
-                        groupName = configGroupNames[modelId];
+            if (groupModels.length > 0) {
+                // 尝试继承现有分组名称
+                let inheritedName = '';
+                for (const modelId of groupModels) {
+                    if (existingGroupNames[modelId]) {
+                        inheritedName = existingGroupNames[modelId];
                         break;
                     }
                 }
+                
+                groupMap.set(defaultGroup.id, {
+                    id: defaultGroup.id,
+                    name: inheritedName || defaultGroup.name,
+                    modelIds: groupModels
+                });
             }
-
-            // 最终备选：单模型用模型名，多模型用 Group N
-            if (!groupName) {
-                const firstModel = models.find(m => m.modelId === modelIds[0]);
-                groupName = modelIds.length === 1
-                    ? (currentConfig.modelCustomNames?.[modelIds[0]] || firstModel?.label || `Group ${groupIndex}`)
-                    : `Group ${groupIndex}`;
-            }
-
-            customGroupingState.groups.push({
-                id: groupId,
-                name: groupName,
-                modelIds: modelIds
-            });
-            groupIndex++;
         }
 
+        // 未匹配的模型放入 "Other" 分组
+        const ungroupedModels = models.filter(m => !matchedModels.has(m.modelId));
+        if (ungroupedModels.length > 0) {
+            groupMap.set('other', {
+                id: 'other',
+                name: i18n['customGrouping.other'] || '其他',
+                modelIds: ungroupedModels.map(m => m.modelId)
+            });
+        }
+
+        // 转换为数组
+        customGroupingState.groups = Array.from(groupMap.values());
+
         renderCustomGroupingContent();
-        showToast(i18n['customGrouping.smartGroup'] + ': ' + customGroupingState.groups.length + ' groups', 'success');
+        const smartGroupMsg = (i18n['customGrouping.smartGroupCount'] || 'Auto Group: {count} groups').replace('{count}', customGroupingState.groups.length);
+        showToast(smartGroupMsg, 'success');
     }
 
     function saveCustomGrouping() {

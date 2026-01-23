@@ -3,6 +3,7 @@
  */
 
 export const CLOUDCODE_BASE_URLS = [
+    'https://daily-cloudcode-pa.googleapis.com',
     'https://cloudcode-pa.googleapis.com',
     'https://daily-cloudcode-pa.sandbox.googleapis.com',
 ] as const;

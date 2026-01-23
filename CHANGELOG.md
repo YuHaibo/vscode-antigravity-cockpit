@@ -8,6 +8,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.0]
+
+### Added
+- **Cockpit Tools Integration**: Bidirectional integration with Antigravity Cockpit Tools.
+  - **Fast Account Switching**: Trigger switching directly from the extension with coordinated login changes.
+  - **Import Workflow**: Real-time progress and cancellation support for batch imports.
+  - **Manual Import**: Import via JSON file or pasted content with validation and preview.
+- **Account Tree View**: A dedicated sidebar for account management.
+  - Hierarchy: Account → Quota Groups → Models.
+  - Visual status for current account and device fingerprint binding.
+- **Accounts Overview**: A dedicated overview page to manage all accounts and quota status.
+  - Search/filter/sort, list/grid toggle, batch select/delete, export, and refresh-all actions.
+  - Settings/announcements entry points and auto-refresh option.
+- **Multi-source Import**: Import from extension sync, local database, Antigravity Tools migration, or refresh_token/JSON batch input.
+- **Offline Settings Sync**: Bidirectional settings synchronization (Language, Theme) with Cockpit Tools via shared file, supporting offline updates.
+- **Quota Caching**: File-based local cache for account quotas to improve performance and offline access.
+- **Dashboard**: "Switch Login" action added with safety confirmation.
+
+### Changed
+- **UI/UX**: Refined the Dashboard account list layout to better support new actions.
+- **Entry Points**: Added an "Accounts Overview" shortcut in the Dashboard for unified account management and imports.
+- **Stability**: Enhanced account switching handling during quota refresh with automatic retries to prevent race conditions.
+- **Grouping**: Updated smart grouping to align with the desktop default model groups.
+- **i18n**: Expanded translations for all new views and dialogs.
+
 ## [1.8.40]
 
 ### Added

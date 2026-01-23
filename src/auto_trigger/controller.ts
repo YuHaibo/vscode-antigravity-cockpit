@@ -203,7 +203,7 @@ class AutoTriggerController {
             });
             const remainingCredentials = await credentialStorage.getAllCredentials();
             const remainingEmails = Object.keys(remainingCredentials);
-            const activeAccount = await credentialStorage.getActiveAccount();
+            const _activeAccount = await credentialStorage.getActiveAccount();
             let scheduleChanged = false;
 
             if (Array.isArray(schedule.selectedAccounts)) {
@@ -752,7 +752,7 @@ class AutoTriggerController {
             const state = await this.getState();
             this.messageHandler({
                 type: 'auto_trigger_state_update',
-                data: state as any,
+                data: state as unknown as Record<string, unknown>,
             });
         }
     }

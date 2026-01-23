@@ -343,6 +343,7 @@ export type WebviewMessageType =
     | 'autoTrigger.addAccount'
     | 'autoTrigger.removeAccount'
     | 'autoTrigger.switchAccount'
+    | 'autoTrigger.switchLoginAccount'
     | 'autoTrigger.reauthorizeAccount'
     | 'autoTrigger.importLocal'
     | 'autoTrigger.importLocalConfirm'
@@ -350,6 +351,7 @@ export type WebviewMessageType =
     | 'autoTrigger.test'
     | 'autoTrigger.validateCrontab'
     | 'autoTrigger.getState'
+    | 'getAutoTriggerState'
     | 'autoTrigger.clearHistory'
     // Feature Guide
     | 'guide.checkItOut'
@@ -362,6 +364,8 @@ export type WebviewMessageType =
     | 'antigravityToolsSync.import'
     | 'antigravityToolsSync.importAuto'
     | 'antigravityToolsSync.importConfirm'
+    | 'antigravityToolsSync.importJson'
+    | 'antigravityToolsSync.cancel'
     | 'antigravityToolsSync.toggle'
     | 'antigravityToolsSync.toggleAutoSwitch'
     | 'antigravityToolsSync.switchToClient'
@@ -407,6 +411,8 @@ export interface WebviewMessage {
     customGroupNames?: Record<string, string>;
     /** 可见模型列表 */
     visibleModels?: string[];
+    /** Antigravity Tools JSON 导入 */
+    jsonText?: string;
     // Auto Trigger
     /** Tab 名称 (tabChanged) */
     tab?: string;

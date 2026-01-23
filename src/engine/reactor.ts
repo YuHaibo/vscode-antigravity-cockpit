@@ -24,6 +24,7 @@ import { cloudCodeClient, CloudCodeAuthError, CloudCodeRequestError } from '../s
 import { autoTriggerController } from '../auto_trigger/controller';
 import { oauthService, credentialStorage, ensureLocalCredentialImported } from '../auto_trigger';
 import { antigravityToolsSyncService } from '../antigravityTools_sync';
+import { readQuotaCache, writeQuotaCache, QuotaCacheModel, QuotaCacheRecord, QuotaCacheSource } from '../services/quota_cache';
 
 const AUTH_RECOMMENDED_LABELS = [
     'Claude Opus 4.5 (Thinking)',
@@ -149,6 +150,149 @@ export class ReactorCore {
      */
     getLatestSnapshot(): QuotaSnapshot | undefined {
         return this.lastSnapshot;
+    }
+
+    private formatCacheModels(models: ModelQuotaInfo[]): QuotaCacheModel[] {
+        return models.map((model) => ({
+            id: model.modelId,
+            displayName: model.label,
+            remainingPercentage: model.remainingPercentage,
+            remainingFraction: model.remainingFraction,
+            resetTime: model.resetTime?.toISOString(),
+            isRecommended: model.isRecommended,
+            tagTitle: model.tagTitle,
+            supportsImages: model.supportsImages,
+            supportedMimeTypes: model.supportedMimeTypes,
+        }));
+    }
+
+    private buildModelsFromCache(models: QuotaCacheModel[]): ModelQuotaInfo[] {
+        const now = Date.now();
+        return models.map((model) => {
+            const label = model.displayName || model.id;
+            const remainingPercentage = model.remainingPercentage ?? (
+                model.remainingFraction !== undefined ? model.remainingFraction * 100 : undefined
+            );
+            const remainingFraction = model.remainingFraction ?? (
+                remainingPercentage !== undefined ? remainingPercentage / 100 : undefined
+            );
+            let resetTime = model.resetTime ? new Date(model.resetTime) : new Date(now + 24 * 60 * 60 * 1000);
+            let resetTimeValid = true;
+            if (Number.isNaN(resetTime.getTime())) {
+                resetTime = new Date(now + 24 * 60 * 60 * 1000);
+                resetTimeValid = false;
+            }
+            const timeUntilReset = Math.max(0, resetTime.getTime() - now);
+            return {
+                label,
+                modelId: model.id,
+                remainingFraction,
+                remainingPercentage,
+                isExhausted: (remainingFraction ?? 0) <= 0,
+                resetTime,
+                resetTimeDisplay: resetTimeValid ? this.formatIso(resetTime) : (t('common.unknown') || 'Unknown'),
+                timeUntilReset,
+                timeUntilResetFormatted: resetTimeValid ? this.formatDelta(timeUntilReset) : (t('common.unknown') || 'Unknown'),
+                resetTimeValid,
+                supportsImages: model.supportsImages,
+                isRecommended: model.isRecommended,
+                tagTitle: model.tagTitle,
+                supportedMimeTypes: model.supportedMimeTypes,
+            };
+        });
+    }
+
+    private async persistQuotaCache(
+        source: QuotaCacheSource,
+        email: string | null,
+        telemetry: QuotaSnapshot,
+    ): Promise<void> {
+        if (!email) {
+            return;
+        }
+        const models = telemetry.allModels && telemetry.allModels.length > 0
+            ? telemetry.allModels
+            : telemetry.models;
+        const record: QuotaCacheRecord = {
+            version: 1,
+            source,
+            email,
+            updatedAt: Date.now(),
+            subscriptionTier: telemetry.userInfo?.tier && telemetry.userInfo.tier !== 'N/A'
+                ? telemetry.userInfo.tier
+                : undefined,
+            isForbidden: false,
+            models: this.formatCacheModels(models),
+        };
+        try {
+            await writeQuotaCache(record);
+        } catch (error) {
+            logger.debug(`[QuotaCache] Failed to write cache: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    public async tryUseQuotaCache(
+        source: QuotaCacheSource,
+        email: string | null,
+    ): Promise<boolean> {
+        if (!email) {
+            return false;
+        }
+        const record = await readQuotaCache(source, email);
+        if (!record || !record.models?.length) {
+            return false;
+        }
+        const models = this.buildModelsFromCache(record.models);
+        if (models.length === 0) {
+            return false;
+        }
+        if (source === 'authorized') {
+            this.lastAuthorizedModels = models;
+        }
+        const telemetry = this.buildSnapshot(models);
+        if (source === 'local') {
+            telemetry.localAccountEmail = email;
+        }
+        this.publishTelemetry(telemetry, source);
+        return true;
+    }
+
+    /**
+     * 获取指定账号的配额快照
+     * 复用现有的解析、过滤、分组逻辑，确保与 Dashboard 一致
+     * @param email 账号邮箱
+     * @returns 配额快照
+     */
+    async fetchQuotaForAccount(email: string): Promise<QuotaSnapshot> {
+        logger.info(`[ReactorCore] Fetching quota for account: ${email}`);
+
+        try {
+            // 获取该账号的 token
+            const tokenStatus = await oauthService.getAccessTokenStatusForAccount(email);
+            if (tokenStatus.state === 'invalid_grant') {
+                throw new CloudCodeAuthError(`Account ${email}: Authorization expired`);
+            }
+            if (tokenStatus.state !== 'ok' || !tokenStatus.token) {
+                throw new Error(`Account ${email}: Token unavailable (${tokenStatus.state})`);
+            }
+
+            // 获取 projectId
+            const credential = await credentialStorage.getCredentialForAccount(email);
+            const projectId = credential?.projectId;
+
+            // 获取配额模型（复用现有方法）
+            const models = await this.fetchAuthorizedQuotaModels(tokenStatus.token, projectId);
+
+            // 构建快照（复用现有分组/过滤逻辑）
+            const snapshot = this.buildSnapshot(models);
+            
+            logger.info(`[ReactorCore] Quota for ${email}: ${models.length} models, ${snapshot.groups?.length ?? 0} groups`);
+            return snapshot;
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            logger.error(`[ReactorCore] Failed to fetch quota for ${email}:`, error.message);
+            throw error;
+        }
     }
 
     /**
@@ -429,6 +573,8 @@ export class ReactorCore {
                 }
                 const telemetry = await this.fetchAuthorizedTelemetry();
                 this.lastAuthorizedFetchedAt = Date.now();
+                const activeEmail = await credentialStorage.getActiveAccount();
+                await this.persistQuotaCache('authorized', activeEmail, telemetry);
                 this.publishTelemetry(telemetry, 'authorized');
                 return;
             } catch (error) {
@@ -473,6 +619,12 @@ export class ReactorCore {
         // Local 模式：优先尝试 state.vscdb 账户 + 远端 API，失败则兜底本地进程
         try {
             const telemetry = await this.fetchLocalTelemetryWithRemoteFallback();
+            const rawEmail = telemetry.localAccountEmail
+                || telemetry.userInfo?.email
+                || this.localAccountEmail
+                || null;
+            const cacheEmail = rawEmail && rawEmail.includes('@') ? rawEmail : null;
+            await this.persistQuotaCache('local', cacheEmail, telemetry);
             this.publishTelemetry(telemetry, 'local');
         } catch (error) {
             throw this.wrapSyncError(error, 'local');
@@ -625,8 +777,15 @@ export class ReactorCore {
 
     /**
      * 获取授权配额并构建快照
+     * @param retryCount 当前重试次数，用于防止账号切换时的无限递归
      */
-    private async fetchAuthorizedTelemetry(): Promise<QuotaSnapshot> {
+    private async fetchAuthorizedTelemetry(retryCount = 0): Promise<QuotaSnapshot> {
+        // 防止账号频繁切换导致的无限递归
+        const MAX_ACCOUNT_CHANGE_RETRIES = 3;
+        if (retryCount >= MAX_ACCOUNT_CHANGE_RETRIES) {
+            logger.warn('[AuthorizedQuota] Max account change retries reached, returning empty snapshot');
+            return ReactorCore.createOfflineSnapshot();
+        }
         const tokenResult = await oauthService.getAccessTokenStatus();
         if (tokenResult.state === 'invalid_grant') {
             throw new CloudCodeAuthError('Authorization expired');
@@ -666,9 +825,10 @@ export class ReactorCore {
         const models = await this.fetchAuthorizedQuotaModels(accessToken, projectId);
         const activeAccountAfter = await credentialStorage.getActiveAccount();
         if (this.normalizeAccount(activeAccount) !== this.normalizeAccount(activeAccountAfter)) {
-            logger.info('[AuthorizedQuota] Active account changed during fetch, dropping stale result');
+            logger.info('[AuthorizedQuota] Active account changed during fetch, retrying with new account');
             this.lastAuthorizedModels = undefined;
-            return ReactorCore.createOfflineSnapshot();
+            // 递归重试，获取新账号的配额
+            return this.fetchAuthorizedTelemetry(retryCount + 1);
         }
         this.lastAuthorizedModels = models;
         await this.ensureAuthorizedVisibleModels(models);
@@ -1124,7 +1284,7 @@ export class ReactorCore {
                     // 从 groupMap 中移除这些模型，并为它们创建独立分组
                     for (const modelId of modelsToRemove) {
                         // 从原分组中移除
-                        for (const [gid, gModels] of groupMap) {
+                        for (const [_gid, gModels] of groupMap) {
                             const idx = gModels.findIndex(m => m.modelId === modelId);
                             if (idx !== -1) {
                                 const [removedModel] = gModels.splice(idx, 1);

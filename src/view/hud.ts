@@ -412,6 +412,7 @@ export class CockpitHUD {
     private generateHtml(webview: vscode.Webview): string {
         // 获取外部资源 URI
         const styleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'dashboard.css');
+        const sharedModalStyleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'shared_modals.css');
         const autoTriggerStyleUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'auto_trigger.css');
         const scriptUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'dashboard.js');
         const autoTriggerScriptUri = this.getWebviewUri(webview, 'out', 'view', 'webview', 'auto_trigger.js');
@@ -453,6 +454,7 @@ export class CockpitHUD {
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src https: data:;">
     <title>${t('dashboard.title')}</title>
     <link rel="stylesheet" href="${styleUri}">
+    <link rel="stylesheet" href="${sharedModalStyleUri}">
     <link rel="stylesheet" href="${autoTriggerStyleUri}">
 </head>
 <body>
