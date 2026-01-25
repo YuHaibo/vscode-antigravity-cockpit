@@ -18,6 +18,7 @@
     let searchQuery = '';
     let filterType = 'all';
     let sortBy = 'overall';
+    let sortDirection = 'desc'; // 'asc' or 'desc'
     let viewMode = 'grid';
     let sortGroups = [];
     let currentConfig = {};
@@ -34,6 +35,7 @@
         searchInput: document.getElementById('ao-search-input'),
         filterSelect: document.getElementById('ao-filter-select'),
         sortSelect: document.getElementById('ao-sort-select'),
+        sortDirectionBtn: document.getElementById('ao-sort-direction-btn'),
         viewListBtn: document.getElementById('ao-view-list'),
         viewGridBtn: document.getElementById('ao-view-grid'),
         refreshAllBtn: document.getElementById('ao-refresh-all-btn'),
@@ -251,6 +253,14 @@
             const selected = currentValue === group.id ? 'selected' : '';
             elements.sortSelect.innerHTML += `<option value="${escapeHtml(group.id)}" ${selected}>${escapeHtml(group.name)}</option>`;
         });
+
+        // Update sort direction button
+        if (elements.sortDirectionBtn) {
+            elements.sortDirectionBtn.textContent = sortDirection === 'asc' ? '⬆' : '⬇';
+            elements.sortDirectionBtn.title = sortDirection === 'asc' 
+                ? (getString('sortAsc', 'Ascending')) 
+                : (getString('sortDesc', 'Descending'));
+        }
     }
 
     function updateFilterOptions() {
@@ -294,15 +304,17 @@
             result = result.filter(acc => getTierLabel(acc) === filterType);
         }
 
+        const modifier = sortDirection === 'asc' ? -1 : 1;
+
         if (sortBy !== 'overall' && sortGroups.some(group => group.id === sortBy)) {
             result.sort((a, b) => {
                 const aGroup = getGroupQuota(a, sortBy);
                 const bGroup = getGroupQuota(b, sortBy);
-                if (aGroup !== bGroup) return bGroup - aGroup;
-                return getOverallQuota(b) - getOverallQuota(a);
+                if (aGroup !== bGroup) return (bGroup - aGroup) * modifier;
+                return (getOverallQuota(b) - getOverallQuota(a)) * modifier;
             });
         } else {
-            result.sort((a, b) => getOverallQuota(b) - getOverallQuota(a));
+            result.sort((a, b) => (getOverallQuota(b) - getOverallQuota(a)) * modifier);
         }
 
         return result;
@@ -708,6 +720,11 @@
 
         elements.sortSelect?.addEventListener('change', (e) => {
             sortBy = e.target.value;
+            render();
+        });
+
+        elements.sortDirectionBtn?.addEventListener('click', () => {
+            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
             render();
         });
 

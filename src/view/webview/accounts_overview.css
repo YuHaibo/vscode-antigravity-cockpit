@@ -286,6 +286,33 @@ body {
     pointer-events: none;
 }
 
+.sort-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sort-direction-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.sort-direction-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--hover-bg);
+}
+
 /* Buttons */
 
 .refresh-btn {

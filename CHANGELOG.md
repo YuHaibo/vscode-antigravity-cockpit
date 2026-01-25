@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.3] - 2026-01-25
+
+### Added
+- **Accounts Overview**: Added sort direction toggle (Ascending/Descending) to the toolbar, allowing users to better organize their account list.
+
+### Improved
+- **Group Renaming**: Implemented optimistic UI updates for group renaming. The interface now updates immediately upon saving, providing instant feedback without waiting for backend confirmation.
+
+### Fixed
+- **Accounts Overview**: Fixed a potential type error when importing refresh tokens (added null check for email).
+
 ## [2.0.2] - 2026-01-24
 
 ### Fixed

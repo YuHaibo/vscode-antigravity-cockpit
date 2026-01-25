@@ -551,6 +551,9 @@
             showToast((i18n['model.renamed'] || 'Model renamed to {name}').replace('{name}', newName), 'success');
         } else if (renameGroupId && renameModelIds.length > 0) {
             // 分组重命名模式
+            // 乐观更新：立即在前端更新 UI
+            updateGroupNameOptimistically(renameGroupId, newName);
+
             vscode.postMessage({
                 command: 'renameGroup',
                 groupId: renameGroupId,
@@ -562,6 +565,30 @@
         }
 
         closeRenameModal();
+    }
+
+    /**
+     * 乐观更新分组名称（直接更新 DOM 和缓存）
+     * @param {string} groupId 分组 ID
+     * @param {string} newName 新名称
+     */
+    function updateGroupNameOptimistically(groupId, newName) {
+        // 1. 更新 DOM
+        const card = document.querySelector(`.group-card[data-group-id="${groupId}"]`);
+        if (card) {
+            const nameSpan = card.querySelector('.group-name');
+            if (nameSpan) {
+                nameSpan.textContent = newName;
+            }
+        }
+        
+        // 2. 更新缓存 (lastSnapshot)
+        if (lastSnapshot && lastSnapshot.groups) {
+            const group = lastSnapshot.groups.find(g => g.groupId === groupId);
+            if (group) {
+                group.groupName = newName;
+            }
+        }
     }
     /**
      * 重置名称为默认值（填入输入框，不直接提交）

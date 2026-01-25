@@ -912,6 +912,9 @@ export class AccountsOverviewWebview {
             });
             try {
                 const credential = await oauthService.buildCredentialFromRefreshToken(tokens[i]);
+                if (!credential.email) {
+                    throw new Error('Credential missing email');
+                }
                 const result = await credentialStorage.saveCredentialForAccount(credential.email, credential);
                 await credentialStorage.clearAccountInvalid(credential.email);
                 if (result === 'added') {
@@ -1165,11 +1168,14 @@ export class AccountsOverviewWebview {
                         </select>
                     </div>
 
-                    <div class="sort-select">
-                        <span class="sort-icon">⇅</span>
-                        <select id="ao-sort-select" aria-label="${i18nStrings.sortLabel || 'Sort'}">
-                            <option value="overall">${i18nStrings.sortOverall}</option>
-                        </select>
+                    <div class="sort-container">
+                        <div class="sort-select">
+                            <span class="sort-icon">⇅</span>
+                            <select id="ao-sort-select" aria-label="${i18nStrings.sortLabel || 'Sort'}">
+                                <option value="overall">${i18nStrings.sortOverall}</option>
+                            </select>
+                        </div>
+                        <button id="ao-sort-direction-btn" class="sort-direction-btn" title="${i18nStrings.sortDirection || 'Toggle Sort Direction'}">⬇</button>
                     </div>
                 </div>
 
