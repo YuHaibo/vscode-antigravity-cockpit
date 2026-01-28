@@ -11,7 +11,7 @@ import { configService, CockpitConfig } from './shared/config_service';
 import { t, i18n, normalizeLocaleInput } from './shared/i18n';
 import { CockpitHUD } from './view/hud';
 import { QuickPickView } from './view/quickpick_view';
-import { initErrorReporter, captureError, flushEvents } from './shared/error_reporter';
+
 import { AccountsRefreshService } from './services/accountsRefreshService';
 
 // Controllers
@@ -82,8 +82,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const packageJson = await import('../package.json');
     const version = packageJson.version || 'unknown';
 
-    // 初始化错误上报服务（放在日志之后，其他模块之前）
-    initErrorReporter(version);
+
 
     logger.info(`Antigravity Cockpit v${version} - Systems Online`);
 
@@ -347,14 +346,7 @@ async function bootSystems(): Promise<void> {
     } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
         logger.error('Boot Error', error);
-        captureError(error, {
-            phase: 'boot',
-            retryCount: autoRetryCount,
-            maxRetries: MAX_AUTO_RETRY,
-            retryDelayMs: AUTO_RETRY_DELAY_MS,
-            refreshIntervalMs: configService.getRefreshIntervalMs(),
-            scan: hunter.getLastDiagnostics(),
-        });
+
 
         // 自动重试机制（异常情况也自动重试）
         if (autoRetryCount < MAX_AUTO_RETRY) {
@@ -434,8 +426,7 @@ export async function deactivate(): Promise<void> {
     // 断开 WebSocket 连接
     cockpitToolsWs.disconnect();
 
-    // 刷新待发送的错误事件
-    await flushEvents();
+
 
     reactor?.shutdown();
     hud?.dispose();

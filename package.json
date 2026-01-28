@@ -250,20 +250,6 @@
           "type": "boolean",
           "default": false,
           "description": "Mask sensitive data (email, etc.) in the Plan Details panel."
-        },
-        "agCockpit.telemetryEnabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable anonymous error reporting to help improve the extension. No personal data is collected.",
-          "tags": [
-            "telemetry",
-            "usesOnlineServices"
-          ]
-        },
-        "agCockpit.telemetryDebug": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable verbose telemetry logs in the developer console. Intended for debugging only."
         }
       }
     },
