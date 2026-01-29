@@ -19,7 +19,7 @@ import { configService } from '../shared/config_service';
 import { t } from '../shared/i18n';
 import { TIMING, API_ENDPOINTS } from '../shared/constants';
 
-import { AntigravityError, isServerError } from '../shared/errors';
+import { AntigravityError } from '../shared/errors';
 import { cloudCodeClient, CloudCodeAuthError, CloudCodeRequestError } from '../shared/cloudcode_client';
 import { autoTriggerController } from '../auto_trigger/controller';
 import { oauthService, credentialStorage, ensureLocalCredentialImported } from '../auto_trigger';
